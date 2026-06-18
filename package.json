@@ -1,1 +1,28 @@
-{"scripts":{"dev":"wrangler dev","deploy":"wrangler deploy","typecheck":"tsc --noEmit"},"devDependencies":{"@cloudflare/workers-types":"4.20260617.1","typescript":"6.0.3","wrangler":"4.101.0"},"overrides":{"ws":"8.21.0","esbuild":"0.28.1"}}
+{
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260617.1",
+    "prettier": "3.6.2",
+    "typescript": "6.0.3",
+    "wrangler": "4.101.0"
+  },
+  "overrides": {
+    "ws": "8.21.0",
+    "esbuild": "0.28.1"
+  },
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/Friends-Climbing.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/Friends-Climbing/issues"
+  },
+  "homepage": "https://github.com/your-org/Friends-Climbing#readme"
+}

@@ -48,7 +48,8 @@ async function ensureR2Bucket(name) {
   try {
     await cf(`/accounts/${accountId}/r2/buckets/${encodeURIComponent(name)}`);
   } catch (error) {
-    if (!String(error.message).includes('10006') && !String(error.message).includes('not found')) throw error;
+    if (!String(error.message).includes('10006') && !String(error.message).includes('not found'))
+      throw error;
     await cf(`/accounts/${accountId}/r2/buckets`, {
       method: 'POST',
       body: JSON.stringify({ name }),
@@ -66,6 +67,9 @@ toml = toml
   .replace(/id = "replace-with-kv-namespace-id"/, `id = "${kvId}"`)
   .replace(/preview_id = "replace-with-preview-kv-namespace-id"/, `preview_id = "${previewKvId}"`)
   .replace(/bucket_name = "friends-climbing-images"/, `bucket_name = "${r2Bucket}"`)
-  .replace(/preview_bucket_name = "friends-climbing-images-dev"/, `preview_bucket_name = "${previewR2Bucket}"`);
+  .replace(
+    /preview_bucket_name = "friends-climbing-images-dev"/,
+    `preview_bucket_name = "${previewR2Bucket}"`,
+  );
 writeFileSync('wrangler.toml', toml);
 execFileSync('npx', ['wrangler', 'deploy'], { stdio: 'inherit' });
