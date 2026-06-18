@@ -61,9 +61,9 @@ JWT secrets 策略：部署者人工生成 Ed25519 JWK，把以下值配置到 G
 本地开发可手动写入 Worker Secrets：
 
 ```bash
-printf '%s' '<private-jwk-json>' | npx wrangler secret put JWT_ED25519_PRIVATE_JWK
-printf '%s' '<public-jwk-json>' | npx wrangler secret put JWT_ED25519_PUBLIC_JWK
-printf '%s' '<kid>' | npx wrangler secret put JWT_KEY_ID
+printf '%s' '<private-jwk-json>' | npx wrangler secret put JWT_ED25519_PRIVATE_JWK --name <worker-name>
+printf '%s' '<public-jwk-json>' | npx wrangler secret put JWT_ED25519_PUBLIC_JWK --name <worker-name>
+printf '%s' '<kid>' | npx wrangler secret put JWT_KEY_ID --name <worker-name>
 ```
 
 Node.js 24 生成 Ed25519 JWK 示例（只在可信本地终端运行）：
@@ -92,8 +92,10 @@ GitHub Actions 仅支持 `workflow_dispatch` 手动触发，不再随 `main` pus
 4. `npm test`
 5. `npm run format:check`
 6. 检查/创建 KV 与 R2，结构化更新并校验 `wrangler.toml`
-7. 从 GitHub Secrets 非交互式同步 `JWT_ED25519_PRIVATE_JWK`、`JWT_ED25519_PUBLIC_JWK`、`JWT_KEY_ID` 到 Cloudflare Worker Secrets（日志不打印 secret 值；首次 Worker 不存在时先部署 bootstrap Worker）
+7. 从 GitHub Secrets 非交互式同步 `JWT_ED25519_PRIVATE_JWK`、`JWT_ED25519_PUBLIC_JWK`、`JWT_KEY_ID` 到 Cloudflare Worker Secrets（日志不打印 secret 值；首次 Worker 不存在时，脚本先写入最终 wrangler.toml，再部署不依赖 JWT 的最小 bootstrap Worker，然后用 `wrangler secret put --name <worker>` 同步 Secrets，最后部署正式 Worker）
 8. `wrangler deploy`
+
+生产与预览环境允许指向同一个 R2 bucket；脚本会保留 `preview_bucket_name` 配置。`canRead()` 对单团队数据恒为 true 是当前权限模型设计，不是遗漏。
 
 需要配置 GitHub Secrets：
 

@@ -35,7 +35,7 @@ Security, auth, validation, export, CI, and deployment scripts have been updated
 - List pagination still reads KV list results then sorts for stable cursor output; documented as suitable for small-team scale.
 - `/api/init-owner` still has a first-owner registration window during initial deployment; this is an accepted operational risk and should be closed immediately after Owner creation.
 - KV list-then-sort pagination is acceptable for a small team but is not designed for large multi-tenant datasets.
-- CSP now uses a fresh random script nonce for each HTML response and no `script-src 'unsafe-inline'`; inline styles still require `style-src 'unsafe-inline'`, which remains a tracked residual risk.
+- CSP now uses a fresh random script nonce for each HTML response and no `script-src 'unsafe-inline'`; inline styles still require `style-src 'unsafe-inline'`, which remains a tracked residual risk. `canRead()` returning true is deliberate for the single-team model.
 
 ## Current Frontend Coverage
 
@@ -47,4 +47,8 @@ Deployers generate Ed25519 JWKs manually, store `JWT_ED25519_PRIVATE_JWK`, `JWT_
 
 ## Tests
 
-The test suite includes Node behavior/security regression tests for list normalization, AA remainder handling, export neutralization/XLSX structure, workflow properties, auth-source safeguards, validation, and sanitized errors. It does not claim browser E2E coverage.
+The test suite includes real Worker `fetch()` behavior tests with fake KV/R2 for CSP nonce, auth/session edge cases, user/member consistency, plan/record validation, AA errors, XLSX export, and Owner protection. It also keeps Node behavior/security regression tests for export helpers, workflow properties, auth-source safeguards, validation, and sanitized errors. It does not claim browser E2E coverage.
+
+## First Deployment Secret Flow
+
+Before the manual `workflow_dispatch` deployment, configure the Ed25519 JWT JWK values in GitHub Actions Secrets. The deployment script fail-fast checks those variables, creates/validates KV and R2, writes the final `wrangler.toml`, bootstraps a minimal Worker only if the script does not exist, syncs Cloudflare Worker Secrets with explicit `--name`, and then runs the official Worker deploy. Secret values are not logged.
