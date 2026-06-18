@@ -3,9 +3,9 @@
 ## Development Environment
 
 1. Install Node.js 24 and npm.
-2. Run `npm ci`.
-3. Start the Worker locally with `npm run dev`.
-4. Run `npm run typecheck` before submitting changes.
+2. Run `npm ci --ignore-scripts`.
+3. Start locally with `npm run dev`.
+4. Before submitting, run `npm run typecheck`, `npm test`, `npm audit --audit-level=high`, and `npm run format:check`.
 
 ## Commit Convention
 
@@ -13,15 +13,15 @@ Use small, focused commits. Prefer Conventional Commits such as `feat:`, `fix:`,
 
 ## Pull Request Guidelines
 
-- Explain the user-visible change and any migration impact.
-- Include tests or checks run, especially `npm run typecheck`.
-- Keep PRs focused and avoid unrelated formatting churn.
-- Update README and security documentation when behavior changes.
+- Explain user-visible changes, security impact, and migration impact.
+- Include tests/checks run.
+- Update README, SECURITY, and review documentation when behavior changes.
+- Do not introduce non-project stacks such as Vue, Java, or Python.
 
 ## Security Requirements
 
-- Do not commit secrets, Cloudflare tokens, account IDs intended to remain private, session IDs, or production data.
-- Validate all runtime input; TypeScript types are not a substitute for validation.
-- Preserve Owner/Member authorization rules and add centralized permission checks for new resources.
-- Protect cookie-authenticated state-changing endpoints against CSRF.
-- Report suspected vulnerabilities privately according to `SECURITY.md`.
+- Do not commit secrets, Cloudflare tokens, JWT private keys, session IDs, `.env` files, or production data.
+- Validate runtime input strictly; TypeScript types are not a substitute for validation.
+- Preserve User/Member one-to-one integrity and centralized permission checks.
+- Preserve strict same-origin `Origin` checks for cookie-authenticated writes.
+- Report suspected vulnerabilities only through GitHub Private Vulnerability Reporting / GitHub Security Advisory as described in `SECURITY.md`.

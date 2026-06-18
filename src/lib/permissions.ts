@@ -1,5 +1,6 @@
 import type { User } from '../types';
 export type ResourceType =
+  | 'users'
   | 'members'
   | 'templates'
   | 'plans'
@@ -13,6 +14,7 @@ export function canRead(_u: User, _type: ResourceType, _o?: any) {
 }
 export function canCreate(u: User, type: ResourceType, parent?: any) {
   if (u.role === 'Owner') return true;
+  if (type === 'plans' || type === 'records') return true;
   if (type === 'images') return owned(parent, u);
   return false;
 }

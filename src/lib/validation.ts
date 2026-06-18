@@ -1,100 +1,101 @@
+import { appError } from './errors';
 export const validUser = (u: string) => /^[A-Za-z0-9]{4,32}$/.test(u);
-export const validPass = (p: string) => typeof p === 'string' && p.length >= 12;
-export async function json(req: Request) {
-  return (await req.json().catch(() => ({}))) as unknown;
-}
-export const ok = (data: any = undefined, init: ResponseInit = {}) =>
-  Response.json({ ok: true, data }, init);
-export const err = (message: string, status = 400) =>
-  Response.json({ ok: false, error: message }, { status });
-export function requireFields(o: any, fs: string[]) {
-  for (const f of fs) if (o[f] === undefined || o[f] === '') throw new Error(`${f} 必填`);
+export const validPass = (p: string) =>
+  typeof p === 'string' &&
+  new TextEncoder().encode(p).length >= 12 &&
+  new TextEncoder().encode(p).length <= 512;
+export async function json(req: Request, max = 65536) {
+  const len = Number(req.headers.get('content-length') || 0);
+  if (len > max) throw appError(413, 'body_too_large', '请求体过大');
+  try {
+    return await req.json();
+  } catch {
+    throw appError(400, 'malformed_json', 'JSON 格式错误');
+  }
 }
 export function asRecord(v: unknown) {
-  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  if (!v || typeof v !== 'object' || Array.isArray(v))
+    throw appError(422, 'invalid_object', '请求字段格式错误');
+  return v as Record<string, unknown>;
 }
-export function str(v: unknown, max = 2000) {
-  return String(v ?? '')
+export function reqStr(o: any, k: string, max = 2000) {
+  if (typeof o[k] !== 'string' || !o[k].trim())
+    throw appError(422, 'invalid_field', `${k} 字段无效`);
+  return cleanStr(o[k], max);
+}
+export function optStr(v: unknown, max = 2000) {
+  return v === undefined ? undefined : cleanStr(v, max);
+}
+export function cleanStr(v: unknown, max = 2000) {
+  if (typeof v !== 'string') throw appError(422, 'invalid_field', '字段类型无效');
+  return v
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .trim()
     .slice(0, max);
 }
-export function num(v: unknown, min = 0, max = 1_000_000) {
-  const n = Number(v);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+export function optNum(v: unknown, min = 0, max = 1_000_000) {
+  if (v === undefined || v === null || v === '') return undefined;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max)
+    throw appError(422, 'invalid_number', '数字字段范围无效');
+  return v;
 }
-export function arrStr(v: unknown, max = 200) {
-  return Array.isArray(v)
-    ? v
-        .map((x) => str(x, 128))
-        .filter(Boolean)
-        .slice(0, max)
-    : [];
+export function money(v: unknown) {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 100_000_000)
+    throw appError(422, 'invalid_amount', '金额字段无效');
+  return v;
 }
-export function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T) {
-  return allowed.includes(v as T) ? (v as T) : fallback;
+export function arrStr(v: unknown) {
+  if (!Array.isArray(v) || !v.length) throw appError(422, 'invalid_members', '成员列表不能为空');
+  const a = v.map((x) => {
+    if (typeof x !== 'string' || !x) throw appError(422, 'invalid_members', '成员字段无效');
+    return x;
+  });
+  if (new Set(a).size !== a.length) throw appError(422, 'duplicate_members', '成员不能重复');
+  return a;
 }
-export function cleanBudget(v: unknown) {
+export function oneOf<T extends string>(v: unknown, allowed: readonly T[]) {
+  if (!allowed.includes(v as T)) throw appError(422, 'invalid_enum', '枚举字段无效');
+  return v as T;
+}
+export function dateStr(v: unknown) {
+  if (
+    typeof v !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(v) ||
+    Number.isNaN(Date.parse(`${v}T00:00:00Z`))
+  )
+    throw appError(422, 'invalid_date', '日期格式必须为 YYYY-MM-DD');
+  return v;
+}
+export function budget(v: unknown) {
+  if (v === undefined) return undefined;
   const o = asRecord(v),
-    keys = [
-      'fuelCents',
-      'tollCents',
-      'parkingCents',
-      'lunchCents',
-      'supplyCents',
-      'snackCents',
-      'ticketCents',
-      'otherCents',
-    ];
-  return Object.fromEntries(keys.map((k) => [k, Math.round(num(o[k], 0, 100_000_000))]));
-}
-export function cleanExpenses(v: unknown) {
-  return Array.isArray(v)
-    ? v.slice(0, 500).map((x, i) => {
-        const o = asRecord(x);
-        return {
-          id: str(o.id, 128) || String(i),
-          category: oneOf(
-            o.category,
-            ['油费', '过路费', '停车费', '午餐', '补给', '门票', '其他'] as const,
-            '其他',
-          ),
-          amountCents: Math.round(num(o.amountCents, 0, 100_000_000)),
-          payerMemberId: str(o.payerMemberId, 128),
-          notes: str(o.notes, 1000),
-        };
-      })
-    : [];
-}
-export function cleanBodyData(v: unknown) {
-  return Array.isArray(v)
-    ? v.slice(0, 500).map((x) => {
-        const o = asRecord(x);
-        return {
-          memberId: str(o.memberId, 128),
-          beforeWeightKg: num(o.beforeWeightKg, 0, 500),
-          beforeBodyFatPct: num(o.beforeBodyFatPct, 0, 100),
-          afterWeightKg: num(o.afterWeightKg, 0, 500),
-          afterBodyFatPct: num(o.afterBodyFatPct, 0, 100),
-        };
-      })
-    : [];
+    out: any = {};
+  for (const k of [
+    'fuelCents',
+    'tollCents',
+    'parkingCents',
+    'lunchCents',
+    'supplyCents',
+    'snackCents',
+    'ticketCents',
+    'otherCents',
+  ])
+    if (o[k] !== undefined) out[k] = money(o[k]);
+  return out;
 }
 export function safeFileName(name: string) {
-  const base = str(name, 180)
-    .replace(/[\\/<>:"'`|?*#%{}^~\[\]]/g, '_')
+  const base = String(name || '')
+    .replace(/[\u0000-\u001f\u007f\\/<>:"'`|?*#%{}^~\[\]]/g, '_')
     .replace(/^\.+/, '_')
-    .trim();
+    .trim()
+    .slice(0, 180);
   return base || 'file';
 }
 export function assertSameOrigin(req: Request, options: { allowMissingOrigin?: boolean } = {}) {
-  const m = req.method.toUpperCase();
-  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(m)) return;
+  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method.toUpperCase())) return;
   const origin = req.headers.get('Origin');
-  if (!origin) {
-    if (options.allowMissingOrigin) return;
-    throw new Error('CSRF origin check failed');
-  }
+  if (!origin && options.allowMissingOrigin) return;
   const u = new URL(req.url);
-  if (origin !== `${u.protocol}//${u.host}`) throw new Error('CSRF origin check failed');
+  if (origin !== `${u.protocol}//${u.host}`) throw appError(403, 'csrf_failed', '请求来源校验失败');
 }
+export { ok, err } from './http';

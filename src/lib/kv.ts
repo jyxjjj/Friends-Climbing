@@ -14,9 +14,9 @@ export async function listJson<T>(kv: KVNamespace, prefix: string): Promise<T[]>
   const out: T[] = [];
   do {
     const r = await kv.list({ prefix, cursor });
-    cursor = r.cursor;
+    cursor = 'cursor' in r ? r.cursor : undefined;
     await Promise.all(
-      r.keys.map(async (k) => {
+      r.keys.map(async (k: any) => {
         const v = await getJson<T>(kv, k.name);
         if (v) out.push(v);
       }),

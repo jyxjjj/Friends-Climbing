@@ -9,41 +9,64 @@ export interface PasswordHash {
   derivedKey: string;
   derivedKeyLength: 64;
 }
-export interface User {
-  username: string;
-  role: Role;
-  passwordHash: PasswordHash;
-  createdAt: string;
-}
-export interface Session {
-  id: string;
-  username: string;
-  expiresAt: number;
-  createdAt: number;
-}
-export interface Member {
-  id: string;
-  nickname: string;
-  realName: string;
-  baseWeightKg: number;
-  baseBodyFatPct?: number;
-  gearNotes: string;
+export interface Versioned {
+  version: number;
   createdAt: string;
   updatedAt: string;
 }
-export interface RouteTemplate {
+export interface User extends Versioned {
+  username: string;
+  role: Role;
+  passwordHash: PasswordHash;
+  memberId: string;
+  tokenVersion: number;
+  disabled: boolean;
+  passwordChangedAt?: string;
+}
+export interface RefreshSession {
+  jti: string;
+  username: string;
+  memberId: string;
+  role: Role;
+  tokenVersion: number;
+  createdAt: number;
+  expiresAt: number;
+  rotatedAt?: number;
+  revokedAt?: number;
+  userAgentHash?: string;
+}
+export interface JwtClaims {
+  sub: string;
+  username: string;
+  memberId: string;
+  role: Role;
+  tokenVersion: number;
+  jti: string;
+  iat: number;
+  exp: number;
+  typ: 'access' | 'refresh';
+}
+export interface Member extends Versioned {
+  id: string;
+  username: string;
+  nickname: string;
+  realName: string;
+  baseWeightKg?: number;
+  baseBodyFatPct?: number;
+  gearNotes: string;
+  disabled?: boolean;
+}
+export interface RouteTemplate extends Versioned {
   id: string;
   name: string;
   defaultDifficulty: Difficulty;
-  defaultDistanceKm: number;
-  defaultDurationMin: number;
-  defaultElevationM: number;
+  defaultDistanceKm?: number;
+  defaultDurationMin?: number;
+  defaultElevationM?: number;
   dangerPoints: string;
   waterPoints: string;
   notes: string;
   createdBy: string;
-  createdAt: string;
-  updatedAt: string;
 }
 export interface ExpenseItem {
   id: string;
@@ -53,31 +76,29 @@ export interface ExpenseItem {
   notes?: string;
 }
 export interface Budget {
-  fuelCents: number;
-  tollCents: number;
-  parkingCents: number;
-  lunchCents: number;
-  supplyCents: number;
-  snackCents: number;
-  ticketCents: number;
-  otherCents: number;
+  fuelCents?: number;
+  tollCents?: number;
+  parkingCents?: number;
+  lunchCents?: number;
+  supplyCents?: number;
+  snackCents?: number;
+  ticketCents?: number;
+  otherCents?: number;
 }
-export interface ClimbPlan {
+export interface ClimbPlan extends Versioned {
   id: string;
   routeName: string;
   difficulty: Difficulty;
   planDate: string;
-  plannedDistanceKm: number;
-  plannedDurationMin: number;
-  plannedElevationM: number;
+  plannedDistanceKm?: number;
+  plannedDurationMin?: number;
+  plannedElevationM?: number;
   memberIds: string[];
-  budget: Budget;
+  budget?: Budget;
   gearList: string;
   dangerPoints: string;
   waterPoints: string;
   createdBy: string;
-  createdAt: string;
-  updatedAt: string;
 }
 export interface MemberBodyData {
   memberId: string;
@@ -86,7 +107,7 @@ export interface MemberBodyData {
   afterWeightKg?: number;
   afterBodyFatPct?: number;
 }
-export interface ClimbRecord {
+export interface ClimbRecord extends Versioned {
   id: string;
   planId?: string;
   routeName: string;
@@ -96,10 +117,10 @@ export interface ClimbRecord {
   plannedDistanceKm?: number;
   plannedDurationMin?: number;
   plannedElevationM?: number;
-  actualDistanceKm: number;
-  actualDurationMin: number;
-  actualElevationM: number;
-  budget: Budget;
+  actualDistanceKm?: number;
+  actualDurationMin?: number;
+  actualElevationM?: number;
+  budget?: Budget;
   expenses: ExpenseItem[];
   bodyData: MemberBodyData[];
   roadNotes: string;
@@ -108,8 +129,6 @@ export interface ClimbRecord {
   review: string;
   otherNotes: string;
   createdBy: string;
-  createdAt: string;
-  updatedAt: string;
 }
 export interface RecordImage {
   id: string;
@@ -140,4 +159,7 @@ export interface DashboardStats {
 export interface Env {
   CLIMB_KV: KVNamespace;
   CLIMB_IMAGES: R2Bucket;
+  JWT_ED25519_PRIVATE_JWK?: string;
+  JWT_ED25519_PUBLIC_JWK?: string;
+  JWT_KEY_ID?: string;
 }

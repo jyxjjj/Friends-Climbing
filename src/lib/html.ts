@@ -581,7 +581,7 @@ export const html = `<!doctype html>
           [msg, setMsg] = useState("");
         useEffect(() => {
           try {
-            const d = localStorage.getItem("draft:" + path);
+            const d = localStorage.getItem("draft:new:" + path);
             if (d && !f.id) setF({ ...f, ...JSON.parse(d) });
           } catch {}
         }, []);
@@ -589,7 +589,7 @@ export const html = `<!doctype html>
         const set = (o) => {
           edit ? setEdit(o) : setF(o);
           try {
-            localStorage.setItem("draft:" + path, JSON.stringify(o));
+            localStorage.setItem("draft:" + (edit ? "edit:" + path + ":" + edit.id : "new:" + path), JSON.stringify(o));
           } catch {}
         };
         return e(
@@ -657,7 +657,7 @@ export const html = `<!doctype html>
                         : "defaultDifficulty"]: x.target.value,
                     }),
                 },
-                diff.map((d) => e("option", null, d)),
+                diff.map((d) => e("option", { key: d }, d)),
               ),
             e(
               "button",
@@ -670,7 +670,7 @@ export const html = `<!doctype html>
                       body: JSON.stringify(obj),
                     });
                     setMsg("已保存");
-                    localStorage.removeItem("draft:" + path);
+                    localStorage.removeItem("draft:" + (obj.id ? "edit:" + path + ":" + obj.id : "new:" + path));
                     setEdit(null);
                     load();
                   } catch (x) {
@@ -694,8 +694,8 @@ export const html = `<!doctype html>
                 list.map((o) =>
                   e(
                     "tr",
-                    null,
-                    cols.map((c) => e("td", null, String(o[c] ?? ""))),
+                    { key: o.id || o.username },
+                    cols.map((c) => e("td", { key: c }, String(o[c] ?? ""))),
                     e(
                       "td",
                       null,
@@ -709,7 +709,8 @@ export const html = `<!doctype html>
                         {
                           className: "btn danger",
                           onClick: async () => {
-                            await api(path + "/" + o.id, { method: "DELETE" });
+                            if (!confirm("确认删除？")) return;
+                            await api(path + "/" + o.id + "?version=" + encodeURIComponent(o.version || 0), { method: "DELETE" });
                             load();
                           },
                         },
@@ -749,6 +750,11 @@ export const html = `<!doctype html>
             "p",
             null,
             "Owner 全部权限；Member 查看权限；创建者可编辑自身计划和记录。",
+          ),
+          e(
+            "p",
+            null,
+            e("a", { href: "https://github.com/jyxjjj/Friends-Climbing", target: "_blank", rel: "noopener noreferrer" }, "AGPL-3.0-or-later 源码仓库"),
           ),
         );
       }
