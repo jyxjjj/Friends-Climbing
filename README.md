@@ -1,5 +1,13 @@
 # Friends Climbing
 
+> ⚠️ 维护者声明
+>
+> 本项目主要由 AI 辅助开发。
+>
+> 在实际测试过程中，发现 Cloudflare Workers KV 的全球传播与最终一致性特性会导致数据延迟和陈旧读取问题，进而影响会话管理等状态相关功能的正确性。
+>
+> 因此，当前架构正在重新评估，后续大概率会进行较大规模重构。现阶段请将本项目视为实验性项目，不建议直接用于生产环境。
+
 Friends Climbing 是一个 Cloudflare Workers + TypeScript + React UMD 单页应用，用于单团队爬山计划、记录、图片、AA 费用和导出管理。项目保持 `AGPL-3.0-or-later`。
 
 ## 当前安全与数据模型
