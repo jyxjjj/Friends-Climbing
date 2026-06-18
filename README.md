@@ -52,11 +52,35 @@ npx wrangler r2 bucket create friends-climbing-images-dev
 npx wrangler r2 bucket info friends-climbing-images
 ```
 
-JWT secrets 必须在部署前写入 Worker Secret；部署脚本会 fail-fast 检查，Worker 不会在运行时静默生成临时密钥：
+JWT secrets 策略：部署者人工生成 Ed25519 JWK，把以下值配置到 GitHub repository settings 的 Actions Secrets；Workflow 在部署前自动同步到 Cloudflare Worker Secrets。Worker 运行时只读取 Worker Secrets，不生成密钥，也不把私钥写入仓库：
 
 - `JWT_ED25519_PRIVATE_JWK`
 - `JWT_ED25519_PUBLIC_JWK`
 - `JWT_KEY_ID`
+
+本地开发可手动写入 Worker Secrets：
+
+```bash
+printf '%s' '<private-jwk-json>' | npx wrangler secret put JWT_ED25519_PRIVATE_JWK
+printf '%s' '<public-jwk-json>' | npx wrangler secret put JWT_ED25519_PUBLIC_JWK
+printf '%s' '<kid>' | npx wrangler secret put JWT_KEY_ID
+```
+
+Node.js 24 生成 Ed25519 JWK 示例（只在可信本地终端运行）：
+
+```bash
+node - <<'NODE'
+const keyPair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+const privateJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+const kid = crypto.randomUUID();
+console.log('JWT_ED25519_PRIVATE_JWK=' + JSON.stringify(privateJwk));
+console.log('JWT_ED25519_PUBLIC_JWK=' + JSON.stringify(publicJwk));
+console.log('JWT_KEY_ID=' + kid);
+NODE
+```
+
+私钥 JWK 只能放入 GitHub Actions Secrets 或通过本地 `wrangler secret put` 输入；不要提交到仓库，不要粘贴到 issue、日志或 README。
 
 ## 部署流程
 
@@ -68,7 +92,8 @@ GitHub Actions 仅支持 `workflow_dispatch` 手动触发，不再随 `main` pus
 4. `npm test`
 5. `npm run format:check`
 6. 检查/创建 KV 与 R2，结构化更新并校验 `wrangler.toml`
-7. `wrangler deploy`
+7. 从 GitHub Secrets 非交互式同步 `JWT_ED25519_PRIVATE_JWK`、`JWT_ED25519_PUBLIC_JWK`、`JWT_KEY_ID` 到 Cloudflare Worker Secrets（日志不打印 secret 值；首次 Worker 不存在时先部署 bootstrap Worker）
+8. `wrangler deploy`
 
 需要配置 GitHub Secrets：
 
@@ -79,6 +104,9 @@ GitHub Actions 仅支持 `workflow_dispatch` 手动触发，不再随 `main` pus
 - `PREVIEW_KV_NAMESPACE_TITLE`
 - `R2_BUCKET_NAME`
 - `PREVIEW_R2_BUCKET_NAME`
+- `JWT_ED25519_PRIVATE_JWK`
+- `JWT_ED25519_PUBLIC_JWK`
+- `JWT_KEY_ID`
 
 ## API 摘要
 
@@ -114,7 +142,7 @@ GitHub Actions 仅支持 `workflow_dispatch` 手动触发，不再随 `main` pus
 
 ## 前端供应链与 CSP
 
-React、ReactDOM、Chart.js 继续使用固定版本 CDN UMD + SRI。SPA 脚本使用固定 nonce，`script-src` 已移除 `unsafe-inline`；样式仍为内联 CSS，因此 `style-src`/`style-src-elem` 仍保留 `unsafe-inline` 作为剩余风险。设置页提供源码仓库链接以满足 AGPL 网络服务源码可得性提示。
+React、ReactDOM、Chart.js 继续使用固定版本 CDN UMD + SRI。SPA 脚本在每次 HTML 响应生成随机 nonce，CSP 与 `<script nonce>` 使用同一 nonce，`script-src` 已移除 `unsafe-inline`；样式仍为内联 CSS，因此 `style-src`/`style-src-elem` 仍保留 `unsafe-inline` 作为剩余风险。设置页提供源码仓库链接以满足 AGPL 网络服务源码可得性提示。
 
 ## License / AGPL Section 13
 
