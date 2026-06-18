@@ -1,4 +1,61 @@
 import type { ClimbRecord, DashboardStats, Member } from '../types';
-export const sumBudget=(b:any)=>Object.values(b||{}).reduce((a:any,v:any)=>a+(Number(v)||0),0) as number;
-export function aa(record:ClimbRecord){const n=record.memberIds.length||1,total=record.expenses.reduce((a,e)=>a+e.amountCents,0),share=Math.ceil(total/n);return{totalCents:total,perPersonCents:share,byMember:record.memberIds.map(id=>{const paid=record.expenses.filter(e=>e.payerMemberId===id).reduce((a,e)=>a+e.amountCents,0);return{memberId:id,paidCents:paid,receivableCents:Math.max(0,paid-share),payableCents:Math.max(0,share-paid)}})}}
-export function dashboard(records:ClimbRecord[],members:Member[]):DashboardStats{const monthly=new Map<string,any>(),yearly=new Map<string,any>(),rank=new Map<string,any>();let cost=0;for(const r of records){cost+=r.expenses.reduce((a,e)=>a+e.amountCents,0);const m=r.date.slice(0,7),y=r.date.slice(0,4);for(const [p,map] of [[m,monthly],[y,yearly]] as const){const v=map.get(p)||{period:p,distanceKm:0,elevationM:0,costCents:0};v.distanceKm+=r.actualDistanceKm;v.elevationM+=r.actualElevationM;v.costCents+=r.expenses.reduce((a,e)=>a+e.amountCents,0);map.set(p,v)}for(const id of r.memberIds){const v=rank.get(id)||{memberId:id,distanceKm:0,elevationM:0,participations:0};v.distanceKm+=r.actualDistanceKm;v.elevationM+=r.actualElevationM;v.participations++;rank.set(id,v)}}return{totalDistanceKm:records.reduce((a,r)=>a+r.actualDistanceKm,0),totalElevationM:records.reduce((a,r)=>a+r.actualElevationM,0),totalDurationMin:records.reduce((a,r)=>a+r.actualDurationMin,0),totalTrips:records.length,totalCostCents:cost,monthly:[...monthly.values()].sort((a,b)=>a.period.localeCompare(b.period)),yearly:[...yearly.values()].sort((a,b)=>a.period.localeCompare(b.period)),memberRankings:[...rank.values()].sort((a,b)=>b.distanceKm-a.distanceKm)}}
+export const sumBudget = (b: any) =>
+  Object.values(b || {}).reduce((a: any, v: any) => a + (Number(v) || 0), 0) as number;
+export function aa(record: ClimbRecord) {
+  const n = record.memberIds.length || 1,
+    total = record.expenses.reduce((a, e) => a + e.amountCents, 0),
+    share = Math.ceil(total / n);
+  return {
+    totalCents: total,
+    perPersonCents: share,
+    byMember: record.memberIds.map((id) => {
+      const paid = record.expenses
+        .filter((e) => e.payerMemberId === id)
+        .reduce((a, e) => a + e.amountCents, 0);
+      return {
+        memberId: id,
+        paidCents: paid,
+        receivableCents: Math.max(0, paid - share),
+        payableCents: Math.max(0, share - paid),
+      };
+    }),
+  };
+}
+export function dashboard(records: ClimbRecord[], members: Member[]): DashboardStats {
+  const monthly = new Map<string, any>(),
+    yearly = new Map<string, any>(),
+    rank = new Map<string, any>();
+  let cost = 0;
+  for (const r of records) {
+    cost += r.expenses.reduce((a, e) => a + e.amountCents, 0);
+    const m = r.date.slice(0, 7),
+      y = r.date.slice(0, 4);
+    for (const [p, map] of [
+      [m, monthly],
+      [y, yearly],
+    ] as const) {
+      const v = map.get(p) || { period: p, distanceKm: 0, elevationM: 0, costCents: 0 };
+      v.distanceKm += r.actualDistanceKm;
+      v.elevationM += r.actualElevationM;
+      v.costCents += r.expenses.reduce((a, e) => a + e.amountCents, 0);
+      map.set(p, v);
+    }
+    for (const id of r.memberIds) {
+      const v = rank.get(id) || { memberId: id, distanceKm: 0, elevationM: 0, participations: 0 };
+      v.distanceKm += r.actualDistanceKm;
+      v.elevationM += r.actualElevationM;
+      v.participations++;
+      rank.set(id, v);
+    }
+  }
+  return {
+    totalDistanceKm: records.reduce((a, r) => a + r.actualDistanceKm, 0),
+    totalElevationM: records.reduce((a, r) => a + r.actualElevationM, 0),
+    totalDurationMin: records.reduce((a, r) => a + r.actualDurationMin, 0),
+    totalTrips: records.length,
+    totalCostCents: cost,
+    monthly: [...monthly.values()].sort((a, b) => a.period.localeCompare(b.period)),
+    yearly: [...yearly.values()].sort((a, b) => a.period.localeCompare(b.period)),
+    memberRankings: [...rank.values()].sort((a, b) => b.distanceKm - a.distanceKm),
+  };
+}
