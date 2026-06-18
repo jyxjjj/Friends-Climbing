@@ -1,6 +1,6 @@
 export const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com",
+  "script-src 'self' 'nonce-friends-climbing-app' https://cdnjs.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
@@ -160,9 +160,9 @@ export const html = `<!doctype html>
   </head>
   <body>
     <div id="root"></div>
-    <script>
+    <script nonce="friends-climbing-app">
       const e = React.createElement,
-        { useState, useEffect } = React;
+        { useState, useEffect, useRef } = React;
       const cats = ["油费", "过路费", "停车费", "午餐", "补给", "门票", "其他"],
         diff = ["休闲", "进阶", "速穿", "重装"];
       async function api(p, o = {}) {
@@ -187,11 +187,12 @@ export const html = `<!doctype html>
           e(type === "textarea" ? "textarea" : "input", {
             className: bad ? "err" : "",
             type: type === "number" ? "number" : type,
-            value: o[k] ?? "",
+            checked: type === "checkbox" ? Boolean(o[k]) : undefined,
+            value: type === "checkbox" ? undefined : (o[k] ?? ""),
             onChange: (x) =>
               set({
                 ...o,
-                [k]:
+                [k]: type === "checkbox" ? x.target.checked :
                   type === "number" ? Number(x.target.value) : x.target.value,
               }),
           }),
@@ -255,6 +256,7 @@ export const html = `<!doctype html>
         if (!user) return e(Login, { setUser });
         const nav = [
           "dashboard",
+          "users",
           "members",
           "templates",
           "plans",
@@ -301,9 +303,11 @@ export const html = `<!doctype html>
             { className: "wrap" },
             page === "dashboard"
               ? e(Dash)
-              : page === "members"
-                ? e(Members, { id, setId })
-                : page === "templates"
+              : page === "users"
+                ? e(Users)
+                : page === "members"
+                  ? e(Members, { id, setId })
+                  : page === "templates"
                   ? e(Templates)
                   : page === "plans"
                     ? e(Plans, { id, setId })
@@ -318,6 +322,7 @@ export const html = `<!doctype html>
       function name(n) {
         return {
           dashboard: "Dashboard",
+          users: "用户",
           members: "成员",
           templates: "路线模板",
           plans: "计划",
@@ -326,14 +331,24 @@ export const html = `<!doctype html>
           settings: "设置",
         }[n];
       }
+      function normalizeListResponse(data) {
+        if (Array.isArray(data)) return { items: data, nextCursor: null, hasMore: false };
+        if (data && typeof data === "object") return {
+          items: Array.isArray(data.items) ? data.items : [],
+          nextCursor: typeof data.nextCursor === "string" ? data.nextCursor : null,
+          hasMore: data.hasMore === true,
+        };
+        return { items: [], nextCursor: null, hasMore: false };
+      }
       function useList(path) {
-        const [a, setA] = useState([]);
-        const load = () => api(path).then(setA);
-        useEffect(load, []);
-        return [a, load];
+        const [page, setPage] = useState({ items: [], nextCursor: null, hasMore: false });
+        const load = (cursor) => api(path + (cursor ? "?cursor=" + encodeURIComponent(cursor) : "")).then((d) => { const n = normalizeListResponse(d); setPage(n); return n; });
+        const refresh = () => load();
+        useEffect(() => { refresh(); }, [path]);
+        return [page.items, load, page, refresh];
       }
       function Dash() {
-        const [d, setD] = useState(null);
+        const [d, setD] = useState(null), chartRef = useRef(null);
         useEffect(() => {
           api("/dashboard").then(setD);
         }, []);
@@ -341,8 +356,9 @@ export const html = `<!doctype html>
           if (d && window.Chart) {
             setTimeout(() => {
               let c = document.getElementById("trend");
-              if (c)
-                new Chart(c, {
+              if (c) {
+                if (chartRef.current) chartRef.current.destroy();
+                chartRef.current = new Chart(c, {
                   type: "line",
                   data: {
                     labels: d.monthly.map((x) => x.period),
@@ -362,7 +378,9 @@ export const html = `<!doctype html>
                     ],
                   },
                 });
+              }
             }, 100);
+            return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
           }
         }, [d]);
         if (!d) return "...";
@@ -408,37 +426,22 @@ export const html = `<!doctype html>
           ),
         );
       }
+      function Users() {
+        const [list, load, page, refresh] = useList("/users"), [f, setF] = useState({ username: "", password: "", role: "Member", nickname: "", realName: "", baseWeightKg: "", baseBodyFatPct: "", gearNotes: "", disabled: false });
+        return e(Crud, { title: "用户管理", list, load, page, refresh, path: "/users", f, setF, cols: ["username", "role", "memberId", "disabled"], fields: ["username", "password", "role", "nickname", "realName", "baseWeightKg", "baseBodyFatPct", "gearNotes", "disabled"] });
+      }
       function Members() {
-        const [list, load] = useList("/members"),
-          [f, setF] = useState({
-            nickname: "",
-            realName: "",
-            baseWeightKg: 0,
-            gearNotes: "",
-          }),
-          [sel, setSel] = useState(null);
+        const [list, load, page, refresh] = useList("/members"), [sel, setSel] = useState(null);
         if (sel) return e(Detail, { id: sel, back: () => setSel(null) });
-        return e(Crud, {
-          title: "成员列表",
-          list,
-          load,
-          path: "/members",
-          f,
-          setF,
-          cols: ["nickname", "realName", "baseWeightKg"],
-          extra: e(
-            "button",
-            { className: "btn", onClick: () => setSel(f.id) },
-            "详情",
-          ),
-        });
+        return e("div", { className: "card" }, e("h2", null, "成员只读列表"), e("button", { className: "btn", onClick: refresh }, "刷新"), e("button", { className: "btn", disabled: !page.hasMore, onClick: () => load(page.nextCursor) }, "下一页"), e("table", { className: "table" }, e("tbody", null, (Array.isArray(list) ? list : []).map((m) => e("tr", { key: m.id }, e("td", null, m.nickname || m.username), e("td", null, m.realName || ""), e("td", null, String(m.baseWeightKg ?? "")), e("td", null, e("button", { className: "btn", onClick: () => setSel(m.id) }, "详情"))))));
       }
       function Detail({ id, back }) {
         const [d, setD] = useState(null);
         useEffect(() => {
-          api("/members/" + id).then(setD);
+          api("/members/" + id + "/detail").then(setD).catch((x) => setD({ error: x.message }));
         }, [id]);
         if (!d) return "...";
+        if (d.error || !d.member) return e("div", { className: "card" }, e("button", { className: "btn", onClick: back }, "返回"), e("b", null, d.error || "成员不存在"));
         return e(
           "div",
           { className: "card" },
@@ -464,7 +467,7 @@ export const html = `<!doctype html>
         );
       }
       function Templates() {
-        const [list, load] = useList("/templates"),
+        const [list, load, page, refresh] = useList("/templates"),
           [f, setF] = useState({
             name: "",
             defaultDifficulty: "休闲",
@@ -479,6 +482,8 @@ export const html = `<!doctype html>
           title: "路线模板列表",
           list,
           load,
+          page,
+          refresh,
           path: "/templates",
           f,
           setF,
@@ -491,7 +496,7 @@ export const html = `<!doctype html>
         });
       }
       function Plans() {
-        const [list, load] = useList("/plans"),
+        const [list, load, page, refresh] = useList("/plans"),
           [f, setF] = useState({
             routeName: "",
             difficulty: "休闲",
@@ -509,6 +514,8 @@ export const html = `<!doctype html>
           title: "计划列表/编辑/详情",
           list,
           load,
+          page,
+          refresh,
           path: "/plans",
           f,
           setF,
@@ -528,7 +535,7 @@ export const html = `<!doctype html>
         });
       }
       function Records() {
-        const [list, load] = useList("/records"),
+        const [list, load, page, refresh] = useList("/records"),
           [f, setF] = useState({
             routeName: "",
             difficulty: "休闲",
@@ -553,6 +560,8 @@ export const html = `<!doctype html>
             title: "历史记录/记录编辑",
             list,
             load,
+            page,
+            refresh,
             path: "/records",
             f,
             setF,
@@ -576,9 +585,10 @@ export const html = `<!doctype html>
           ),
         );
       }
-      function Crud({ title, list, load, path, f, setF, cols, after }) {
+      function Crud({ title, list, load, page, refresh, path, f, setF, cols, after, fields }) {
         const [edit, setEdit] = useState(null),
-          [msg, setMsg] = useState("");
+          [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
+        const rows = Array.isArray(list) ? list : [];
         useEffect(() => {
           try {
             const d = localStorage.getItem("draft:new:" + path);
@@ -599,7 +609,7 @@ export const html = `<!doctype html>
             "div",
             { className: "card" },
             e("h2", null, title),
-            [
+            (fields || [
               "routeName",
               "name",
               "nickname",
@@ -624,7 +634,7 @@ export const html = `<!doctype html>
               "weather",
               "review",
               "otherNotes",
-            ].map((k) =>
+            ]).map((k) =>
               k in obj
                 ? e(Field, {
                     key: k,
@@ -633,12 +643,12 @@ export const html = `<!doctype html>
                     k,
                     label: k,
                     type:
-                      k.includes("Notes") || k === "review"
+                      k === "disabled" ? "checkbox" : k === "password" ? "password" : k === "planDate" || k === "date" ? "date" : k.includes("Notes") || k === "review"
                         ? "textarea"
                         : k.includes("Km") ||
                             k.includes("Min") ||
                             k.includes("M") ||
-                            k.includes("Weight")
+                            k.includes("Weight") || k.includes("Pct")
                           ? "number"
                           : "text",
                   })
@@ -662,23 +672,24 @@ export const html = `<!doctype html>
             e(
               "button",
               {
-                className: "btn",
+                className: "btn", disabled: busy,
                 onClick: async () => {
+                  if (busy) return; setBusy(true);
                   try {
-                    await api(path + (obj.id ? "/" + obj.id : ""), {
-                      method: obj.id ? "PUT" : "POST",
+                    await api(path + (obj.id || obj.username && path === "/users" ? "/" + (obj.id || obj.username) : ""), {
+                      method: obj.id || obj.username && path === "/users" && edit ? "PUT" : "POST",
                       body: JSON.stringify(obj),
                     });
                     setMsg("已保存");
                     localStorage.removeItem("draft:" + (obj.id ? "edit:" + path + ":" + obj.id : "new:" + path));
-                    setEdit(null);
+                    setEdit(null); setF(f);
                     load();
                   } catch (x) {
                     setMsg(x.message);
-                  }
+                  } finally { setBusy(false); }
                 },
               },
-              "保存",
+              busy ? "保存中..." : "保存",
             ),
             e("span", null, msg),
           ),
@@ -691,7 +702,7 @@ export const html = `<!doctype html>
               e(
                 "tbody",
                 null,
-                list.map((o) =>
+                rows.map((o) =>
                   e(
                     "tr",
                     { key: o.id || o.username },
@@ -699,15 +710,15 @@ export const html = `<!doctype html>
                     e(
                       "td",
                       null,
-                      e(
+                      path !== "/members" && e(
                         "button",
                         { className: "btn", onClick: () => setEdit(o) },
                         "编辑",
                       ),
-                      e(
+                      path !== "/users" && path !== "/members" && e(
                         "button",
                         {
-                          className: "btn danger",
+                          className: "btn danger", disabled: busy,
                           onClick: async () => {
                             if (!confirm("确认删除？")) return;
                             await api(path + "/" + o.id + "?version=" + encodeURIComponent(o.version || 0), { method: "DELETE" });
@@ -722,6 +733,8 @@ export const html = `<!doctype html>
                 ),
               ),
             ),
+            e("button", { className: "btn", onClick: refresh || load }, "刷新"),
+            e("button", { className: "btn", disabled: !(page && page.hasMore), onClick: () => load(page && page.nextCursor) }, "下一页"),
           ),
         );
       }

@@ -25,10 +25,13 @@ export const RECORD_COLUMNS = [
   'updatedAt',
   'version',
 ];
-function cell(v: any) {
+function neutralize(v: any) {
   let s = String(v ?? '');
   if (CSV_DANG.test(s)) s = "'" + s;
-  return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+function cell(v: any) {
+  return `"${neutralize(v).replace(/"/g, '""')}"`;
 }
 export function csv(rows: any[]) {
   const cols = RECORD_COLUMNS;
@@ -60,10 +63,16 @@ function esc(s: string) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "''");
 }
 function xml(s: any) {
-  return String(s ?? '').replace(
-    /[&<>"]/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!,
+  return neutralize(s).replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!,
   );
+}
+function excelCol(n: number) {
+  let s = '';
+  for (let x = n + 1; x > 0; x = Math.floor((x - 1) / 26))
+    s = String.fromCharCode(((x - 1) % 26) + 65) + s;
+  return s;
 }
 function crc32(str: string) {
   let c = ~0;
@@ -168,7 +177,7 @@ export function xlsx(rows: any[]) {
   const sheetRows = data
     .map(
       (row, i) =>
-        `<row r="${i + 1}">${row.map((v, j) => `<c r="${String.fromCharCode(65 + j)}${i + 1}" t="inlineStr"><is><t>${xml(v)}</t></is></c>`).join('')}</row>`,
+        `<row r="${i + 1}">${row.map((v, j) => `<c r="${excelCol(j)}${i + 1}" t="inlineStr"><is><t>${xml(v)}</t></is></c>`).join('')}</row>`,
     )
     .join('');
   return zip({

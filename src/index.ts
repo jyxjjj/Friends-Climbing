@@ -88,7 +88,7 @@ async function handle(req: Request, env: Env) {
   }
   if (p === '/api/refresh') {
     if (req.method !== 'POST') return methodNotAllowed(['POST']);
-    assertSameOrigin(req, { allowMissingOrigin: true });
+    assertSameOrigin(req);
     const t = await rotateRefresh(req, env);
     return ok(
       { refreshed: true },
@@ -100,11 +100,9 @@ async function handle(req: Request, env: Env) {
       },
     );
   }
-  const u = await currentUser(req, env);
-  if (!u) return err('未登录或登录已过期', 401, 'unauthorized');
-  assertSameOrigin(req);
   if (p === '/api/logout') {
     if (req.method !== 'POST') return methodNotAllowed(['POST']);
+    assertSameOrigin(req);
     await revokeCurrentRefresh(req, env);
     return ok(null, {
       headers: [
@@ -113,6 +111,9 @@ async function handle(req: Request, env: Env) {
       ] as any,
     });
   }
+  const u = await currentUser(req, env);
+  if (!u) return err('未登录或登录已过期', 401, 'unauthorized');
+  assertSameOrigin(req);
   if (p === '/api/me')
     return req.method === 'GET'
       ? ok({ username: u.username, role: u.role, memberId: u.memberId })
@@ -128,6 +129,17 @@ async function handle(req: Request, env: Env) {
         await listJson<Member>(env.CLIMB_KV, 'members:'),
       ),
     );
+  }
+  if (p.match(/^\/api\/members\/[^/]+\/detail$/)) {
+    if (req.method !== 'GET') return methodNotAllowed(['GET']);
+    const mid = p.split('/')[3];
+    const member = await getJson<Member>(env.CLIMB_KV, `members:${mid}`);
+    if (!member) return err('成员不存在', 404, 'member_not_found');
+    if (!canRead(u, 'members', member)) return err('无权限', 403);
+    const records = (await listJson<ClimbRecord>(env.CLIMB_KV, 'records:')).filter((r) =>
+      r.memberIds.includes(mid),
+    );
+    return ok({ member, records, stats: memberStats(records) });
   }
   if (p.match(/^\/api\/members\/[^/]+\/stats$/)) {
     if (req.method !== 'GET') return methodNotAllowed(['GET']);
@@ -156,8 +168,8 @@ async function handle(req: Request, env: Env) {
   return err('Not Found', 404, 'not_found');
 }
 async function login(req: Request, env: Env) {
-  await rateLimit(req, env);
   const b = asRecord(await json(req, 4096));
+  await rateLimit(req, env, b);
   const username = typeof b.username === 'string' ? b.username : '',
     password = typeof b.password === 'string' ? b.password : '';
   const dummy = await hashPassword('dummy-password-0000');
@@ -175,13 +187,7 @@ async function login(req: Request, env: Env) {
     },
   );
 }
-async function rateLimit(req: Request, env: Env) {
-  const b = asRecord(
-    await req
-      .clone()
-      .json()
-      .catch(() => ({})),
-  );
+async function rateLimit(req: Request, env: Env, b: Record<string, unknown>) {
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown',
     user = typeof b.username === 'string' ? b.username.slice(0, 32) : 'invalid';
   for (const k of [`loginRate:ip:${ip}`, `loginRate:user:${user}`]) {
@@ -271,9 +277,25 @@ async function crud(req: Request, env: Env, u: User, type: string, item?: string
   const b = asRecord(await json(req));
   if (req.method === 'POST') {
     if (!canCreate(u, type as any)) return err('无权限', 403);
+    if (type === 'users') {
+      const username = reqStr(b, 'username', 32);
+      if (await getJson(env.CLIMB_KV, `users:${username}`))
+        return err('用户已存在', 409, 'duplicate_user');
+      const o = await sanitize(env, type, b, null, u);
+      const memberKey = `members:${o.memberId}`;
+      try {
+        await putJson(env.CLIMB_KV, memberKey, o.__member);
+        delete o.__member;
+        await putJson(env.CLIMB_KV, `users:${o.username}`, o);
+      } catch (e) {
+        await del(env.CLIMB_KV, memberKey);
+        throw e;
+      }
+      return ok(o);
+    }
     const o = await sanitize(env, type, b, null, u);
     o.id ||= id();
-    await putJson(env.CLIMB_KV, prefix + (type === 'users' ? o.username : o.id), o);
+    await putJson(env.CLIMB_KV, prefix + o.id, o);
     return ok(o);
   }
   const old = await getJson<any>(env.CLIMB_KV, prefix + item);
@@ -282,7 +304,11 @@ async function crud(req: Request, env: Env, u: User, type: string, item?: string
   if (old.version && Number(b.version) !== old.version)
     return err('版本冲突，请刷新后重试', 409, 'version_conflict');
   const o = await sanitize(env, type, b, old, u);
-  o.id = item;
+  if (type !== 'users') o.id = item;
+  if (type === 'users' && o.__member) {
+    await putJson(env.CLIMB_KV, `members:${o.memberId}`, o.__member);
+    delete o.__member;
+  }
   await putJson(env.CLIMB_KV, prefix + item, o);
   if (
     type === 'users' &&
@@ -334,19 +360,21 @@ async function sanitize(env: Env, type: string, b: any, old: any, u: User): Prom
       passwordChangedAt: b.password ? t : old?.passwordChangedAt,
       ...common,
     };
+    const oldMember = old ? await getJson<Member>(env.CLIMB_KV, `members:${memberId}`) : null;
     const m: Member = {
       id: memberId,
       username,
-      nickname: String(b.nickname || old?.nickname || username),
-      realName: String(b.realName || old?.realName || ''),
-      gearNotes: String(b.gearNotes || old?.gearNotes || ''),
+      nickname: String(b.nickname ?? oldMember?.nickname ?? username),
+      realName: String(b.realName ?? oldMember?.realName ?? ''),
+      baseWeightKg: optNum(b.baseWeightKg, 0, 500) ?? oldMember?.baseWeightKg,
+      baseBodyFatPct: optNum(b.baseBodyFatPct, 0, 100) ?? oldMember?.baseBodyFatPct,
+      gearNotes: String(b.gearNotes ?? oldMember?.gearNotes ?? ''),
       disabled: user.disabled,
-      version: old?.memberVersion || 1,
-      createdAt: old?.createdAt || t,
+      version: oldMember ? oldMember.version + 1 : 1,
+      createdAt: oldMember?.createdAt || t,
       updatedAt: t,
     };
-    await putJson(env.CLIMB_KV, `members:${memberId}`, m);
-    return user;
+    return { ...user, __member: m };
   }
   if (type === 'members') throw appError(422, 'use_users', '成员必须通过用户管理创建或修改');
   if (type === 'templates')

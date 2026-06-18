@@ -53,36 +53,42 @@ function ensureR2Bucket(name) {
   }
   return name;
 }
-function ensureJwtSecrets() {
-  for (const name of ['JWT_ED25519_PRIVATE_JWK', 'JWT_ED25519_PUBLIC_JWK', 'JWT_KEY_ID']) {
-    try {
-      wrangler(['secret', 'list'], { capture: true }).includes(name) ||
-        console.log(
-          `JWT secret ${name} is not visible in wrangler secret list; ensure it is set or let deployment fail validation.`,
-        );
-    } catch {
-      console.log('Unable to list secrets; wrangler deploy will validate required JWT secrets.');
-      break;
-    }
+async function ensureJwtSecrets() {
+  const worker = await cf(`/accounts/${accountId}/workers/scripts/${workerName}/secrets`).catch(
+    () => [],
+  );
+  const names = new Set(Array.isArray(worker) ? worker.map((s) => s.name) : []);
+  const missing = ['JWT_ED25519_PRIVATE_JWK', 'JWT_ED25519_PUBLIC_JWK', 'JWT_KEY_ID'].filter(
+    (name) => !names.has(name),
+  );
+  if (missing.length) {
+    throw new Error(
+      `Missing Worker secrets: ${missing.join(', ')}. Configure them before deploy, e.g. ` +
+        '`npx wrangler secret put JWT_ED25519_PRIVATE_JWK`, ' +
+        '`npx wrangler secret put JWT_ED25519_PUBLIC_JWK`, and `npx wrangler secret put JWT_KEY_ID`.',
+    );
   }
 }
 const [kvId, previewKvId] = await Promise.all([ensureKv(kvTitle), ensureKv(previewKvTitle)]);
 ensureR2Bucket(r2Bucket);
 ensureR2Bucket(previewR2Bucket);
-ensureJwtSecrets();
+await ensureJwtSecrets();
 const config = TOML.parse(readFileSync('wrangler.toml', 'utf8'));
 config.name = workerName;
 config.kv_namespaces = [{ binding: 'CLIMB_KV', id: kvId, preview_id: previewKvId }];
 config.r2_buckets = [
   { binding: 'CLIMB_IMAGES', bucket_name: r2Bucket, preview_bucket_name: previewR2Bucket },
 ];
-config.secrets = { required: ['JWT_ED25519_PRIVATE_JWK', 'JWT_ED25519_PUBLIC_JWK', 'JWT_KEY_ID'] };
 const output = TOML.stringify(config);
 const parsed = TOML.parse(output);
 if (
   parsed.name !== workerName ||
+  parsed.main !== config.main ||
+  parsed.compatibility_date !== config.compatibility_date ||
   parsed.kv_namespaces?.[0]?.id !== kvId ||
-  parsed.r2_buckets?.[0]?.bucket_name !== r2Bucket
+  parsed.kv_namespaces?.[0]?.preview_id !== previewKvId ||
+  parsed.r2_buckets?.[0]?.bucket_name !== r2Bucket ||
+  parsed.r2_buckets?.[0]?.preview_bucket_name !== previewR2Bucket
 )
   throw new Error('wrangler.toml validation failed after structured update');
 writeFileSync('wrangler.toml', output);
