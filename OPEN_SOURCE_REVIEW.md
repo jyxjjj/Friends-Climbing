@@ -42,7 +42,7 @@ Date: 2026-06-18
 ### Low
 
 - 添加 `LICENSE`、`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md`。
-- `package.json` 增加 license、repository、bugs、homepage 元数据。
+- `package.json` 增加 license、repository、bugs、homepage 元数据，并已使用真实仓库 URL。
 - README 增加 License 与 AGPL Section 13 Source Code Availability 说明。
 - React、ReactDOM 与 Chart.js 使用固定版本 cdnjs URL、`integrity` 和 `crossorigin="anonymous"`。
 
@@ -67,7 +67,6 @@ Date: 2026-06-18
 - Cloudflare KV does not provide a strong transactional compare-and-set primitive for the Owner initialization path. For deployments requiring strict single-writer global initialization guarantees under heavy concurrent first-run traffic, use a Durable Object or pre-provision the Owner out-of-band.
 - The frontend is still a compact inline SPA. CSP must temporarily keep `script-src 'unsafe-inline'` and style inline permissions for the current inline JavaScript/CSS; this is a Low/Medium residual risk. Recommended follow-up: split JS/CSS into static files and use nonce/hash-based CSP to remove `unsafe-inline`.
 - Third-party scripts now use fixed-version cdnjs URLs with SRI. Self-hosting React, ReactDOM, Chart.js, and fonts remains the preferred supply-chain hardening option for deployments that want no external frontend dependencies.
-- The repository metadata currently uses a placeholder GitHub organization URL and should be updated by the project owner before publishing.
 
 ## 是否建议公开
 
