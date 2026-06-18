@@ -11,8 +11,10 @@ export function aa(record: ClimbRecord, ownerMemberId?: string) {
     if (!ids.includes(e.payerMemberId))
       throw appError(422, 'payer_not_participant', '付款人必须是参与成员');
   const base = Math.floor(total / ids.length),
-    rem = total % ids.length,
-    owner = ownerMemberId && ids.includes(ownerMemberId) ? ownerMemberId : ids[0];
+    rem = total % ids.length;
+  if (rem && (!ownerMemberId || !ids.includes(ownerMemberId)))
+    throw appError(422, 'owner_not_participant', 'Owner 必须参与记录才能承接 AA 余数');
+  const owner = ownerMemberId && ids.includes(ownerMemberId) ? ownerMemberId : ids[0];
   const byMember = ids.map((id) => {
     const owed = base + (id === owner ? rem : 0);
     const paid = record.expenses

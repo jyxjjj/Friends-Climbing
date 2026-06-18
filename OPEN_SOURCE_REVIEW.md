@@ -33,4 +33,6 @@ Security, auth, validation, export, CI, and deployment scripts have been updated
 
 - `/api/init-owner` first claim remains accepted operational risk.
 - List pagination still reads KV list results then sorts for stable cursor output; documented as suitable for small-team scale.
-- CSP still permits required inline SPA script/style because the app remains a single embedded UMD SPA. Future work can split static assets and remove inline allowances.
+- `/api/init-owner` still has a first-owner registration window during initial deployment; this is an accepted operational risk and should be closed immediately after Owner creation.
+- KV list-then-sort pagination is acceptable for a small team but is not designed for large multi-tenant datasets.
+- CSP no longer allows unsafe inline scripts, but inline styles still require `style-src 'unsafe-inline'`; this remains a tracked residual risk.

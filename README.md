@@ -52,7 +52,7 @@ npx wrangler r2 bucket create friends-climbing-images-dev
 npx wrangler r2 bucket info friends-climbing-images
 ```
 
-JWT secrets 必须写入 Worker Secret，Worker 不会在运行时静默生成临时密钥：
+JWT secrets 必须在部署前写入 Worker Secret；部署脚本会 fail-fast 检查，Worker 不会在运行时静默生成临时密钥：
 
 - `JWT_ED25519_PRIVATE_JWK`
 - `JWT_ED25519_PUBLIC_JWK`
@@ -114,7 +114,7 @@ GitHub Actions 仅支持 `workflow_dispatch` 手动触发，不再随 `main` pus
 
 ## 前端供应链与 CSP
 
-React、ReactDOM、Chart.js 继续使用固定版本 CDN UMD + SRI。SPA 内联脚本/样式仍存在，因此 CSP 使用固定 CDN 来源并保留必要的内联许可；后续可拆成 Worker 静态资源并改用 hash/nonce 进一步收紧。设置页提供源码仓库链接以满足 AGPL 网络服务源码可得性提示。
+React、ReactDOM、Chart.js 继续使用固定版本 CDN UMD + SRI。SPA 脚本使用固定 nonce，`script-src` 已移除 `unsafe-inline`；样式仍为内联 CSS，因此 `style-src`/`style-src-elem` 仍保留 `unsafe-inline` 作为剩余风险。设置页提供源码仓库链接以满足 AGPL 网络服务源码可得性提示。
 
 ## License / AGPL Section 13
 
