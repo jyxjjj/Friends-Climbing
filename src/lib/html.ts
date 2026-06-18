@@ -422,9 +422,10 @@ export function renderHtml(nonce: string) {
           ),
         );
       }
+      const userInitialState = () => ({ username: "", password: "", role: "Member", nickname: "", realName: "", baseWeightKg: "", baseBodyFatPct: "", gearNotes: "", disabled: false });
       function Users() {
-        const [list, load, page, refresh] = useList("/users"), [f, setF] = useState({ username: "", password: "", role: "Member", nickname: "", realName: "", baseWeightKg: "", baseBodyFatPct: "", gearNotes: "", disabled: false });
-        return e(Crud, { title: "用户管理", list, load, page, refresh, path: "/users", f, setF, cols: ["username", "role", "memberId", "disabled"], fields: ["username", "password", "role", "nickname", "realName", "baseWeightKg", "baseBodyFatPct", "gearNotes", "disabled"] });
+        const [list, load, page, refresh] = useList("/users"), [f, setF] = useState(userInitialState);
+        return e(Crud, { title: "用户管理", list, load, page, refresh, path: "/users", f, setF, initialState: userInitialState, cols: ["username", "role", "memberId", "disabled"], fields: ["username", "password", "role", "nickname", "realName", "baseWeightKg", "baseBodyFatPct", "gearNotes", "disabled"] });
       }
       function Members() {
         const [list, load, page, refresh] = useList("/members"), [sel, setSel] = useState(null);
@@ -486,18 +487,19 @@ export function renderHtml(nonce: string) {
           d.records.map((r) => e("p", null, r.date + " " + r.routeName)),
         );
       }
-      function Templates() {
-        const [list, load, page, refresh] = useList("/templates"),
-          [f, setF] = useState({
+      const templateInitialState = () => ({
             name: "",
             defaultDifficulty: "休闲",
-            defaultDistanceKm: 0,
-            defaultDurationMin: 0,
-            defaultElevationM: 0,
+            defaultDistanceKm: "",
+            defaultDurationMin: "",
+            defaultElevationM: "",
             dangerPoints: "",
             waterPoints: "",
             notes: "",
           });
+      function Templates() {
+        const [list, load, page, refresh] = useList("/templates"),
+          [f, setF] = useState(templateInitialState);
         return e(Crud, {
           title: "路线模板列表",
           list,
@@ -507,6 +509,7 @@ export function renderHtml(nonce: string) {
           path: "/templates",
           f,
           setF,
+          initialState: templateInitialState,
           cols: [
             "name",
             "defaultDifficulty",
@@ -515,21 +518,10 @@ export function renderHtml(nonce: string) {
           ],
         });
       }
+      const planInitialState = () => ({ routeName: "", difficulty: "休闲", planDate: "", plannedDistanceKm: "", plannedDurationMin: "", plannedElevationM: "", memberIds: [], budget: {}, gearList: "", dangerPoints: "", waterPoints: "" });
       function Plans() {
         const [list, load, page, refresh] = useList("/plans"),
-          [f, setF] = useState({
-            routeName: "",
-            difficulty: "休闲",
-            planDate: "",
-            plannedDistanceKm: 0,
-            plannedDurationMin: 0,
-            plannedElevationM: 0,
-            memberIds: [],
-            budget: {},
-            gearList: "",
-            dangerPoints: "",
-            waterPoints: "",
-          });
+          [f, setF] = useState(planInitialState);
         return e(Crud, {
           title: "计划列表/编辑/详情",
           list,
@@ -539,6 +531,7 @@ export function renderHtml(nonce: string) {
           path: "/plans",
           f,
           setF,
+          initialState: planInitialState,
           cols: ["routeName", "difficulty", "planDate", "plannedDistanceKm"],
           after: (o) =>
             e(
@@ -554,25 +547,10 @@ export function renderHtml(nonce: string) {
             ),
         });
       }
+      const recordInitialState = () => ({ routeName: "", difficulty: "休闲", date: "", memberIds: [], actualDistanceKm: "", actualDurationMin: "", actualElevationM: "", budget: {}, expenses: [], bodyData: [], roadNotes: "", riskNotes: "", weather: "", review: "", otherNotes: "" });
       function Records() {
         const [list, load, page, refresh] = useList("/records"), [panel, setPanel] = useState(null),
-          [f, setF] = useState({
-            routeName: "",
-            difficulty: "休闲",
-            date: "",
-            memberIds: [],
-            actualDistanceKm: 0,
-            actualDurationMin: 0,
-            actualElevationM: 0,
-            budget: {},
-            expenses: [],
-            bodyData: [],
-            roadNotes: "",
-            riskNotes: "",
-            weather: "",
-            review: "",
-            otherNotes: "",
-          });
+          [f, setF] = useState(recordInitialState);
         return e(
           React.Fragment,
           null,
@@ -585,6 +563,7 @@ export function renderHtml(nonce: string) {
             path: "/records",
             f,
             setF,
+            initialState: recordInitialState,
             cols: ["routeName", "date", "actualDistanceKm", "actualElevationM"],
             after: (o) => e(React.Fragment, null, e("a", { href: "/api/export/record/" + o.id + "?format=json" }, "导出"), e("button", { className: "btn", onClick: () => setPanel({ type: "images", record: o }) }, "图片"), e("button", { className: "btn", onClick: () => setPanel({ type: "aa", record: o }) }, "AA")),
           }),
@@ -608,14 +587,14 @@ export function renderHtml(nonce: string) {
       function yuanToCents(v) { if (v === "") return undefined; const n = Number(v); if (!Number.isFinite(n) || n < 0) throw Error("金额必须是非负数字"); return Math.round(n * 100); }
       function BudgetEditor({ obj, set }) {
         const b = obj.budget || {};
-        return e("div", null, e("h3", null, "预算（元）"), e("div", { className: "grid" }, budgetKeys.map(k => e("div", { key: k }, e("label", null, budgetLabels[k]), e("input", { type: "number", min: "0", step: "0.01", value: centsToYuan(b[k]), onChange: ev => { const nb = { ...b }; if (ev.target.value === "") delete nb[k]; else nb[k] = Math.round(Number(ev.target.value) * 100); set({ ...obj, budget: nb }); } })))));
+        return e("div", null, e("h3", null, "预算（元）"), e("div", { className: "grid" }, budgetKeys.map(k => e("div", { key: k }, e("label", null, budgetLabels[k]), e("input", { type: "number", min: "0", step: "0.01", value: centsToYuan(b[k]), onChange: ev => { const nb = { ...b }; if (ev.target.value === "") delete nb[k]; else { const cents = yuanToCents(ev.target.value); if (cents === undefined) delete nb[k]; else nb[k] = cents; } set({ ...obj, budget: nb }); } })))));
       }
       function ExpensesEditor({ obj, set }) {
         const memberIds = Array.isArray(obj.memberIds) ? obj.memberIds : [], expenses = Array.isArray(obj.expenses) ? obj.expenses : [];
         const update = (i, patch) => set({ ...obj, expenses: expenses.map((x, n) => n === i ? { ...x, ...patch } : x) });
         return e("div", null, e("h3", null, "费用（元）"), expenses.map((x, i) => e("div", { className: "grid", key: x.id || i },
           e("select", { value: x.category || cats[0], onChange: ev => update(i, { category: ev.target.value }) }, cats.map(c => e("option", { key: c }, c))),
-          e("input", { type: "number", min: "0", step: "0.01", value: centsToYuan(x.amountCents), onChange: ev => update(i, { amountCents: Math.round(Number(ev.target.value) * 100) }) }),
+          e("input", { type: "number", min: "0", step: "0.01", value: centsToYuan(x.amountCents), onChange: ev => { const cents = yuanToCents(ev.target.value); update(i, cents === undefined ? { amountCents: undefined } : { amountCents: cents }); } }),
           e("select", { value: x.payerMemberId || "", onChange: ev => update(i, { payerMemberId: ev.target.value }) }, e("option", { value: "" }, "选择付款人"), memberIds.map(mid => e("option", { key: mid, value: mid }, mid))),
           e("input", { value: x.notes || "", placeholder: "备注", onChange: ev => update(i, { notes: ev.target.value }) }),
           !memberIds.includes(x.payerMemberId) && e("b", null, "付款人不在参与成员中"),
@@ -633,8 +612,8 @@ export function renderHtml(nonce: string) {
         if ((path === "/plans" || path === "/records") && (!Array.isArray(out.memberIds) || !out.memberIds.length)) throw Error("请选择至少一名成员");
         if (out.budget) { const b = {}; for (const k of budgetKeys) if (out.budget[k] === 0 || out.budget[k]) { if (!Number.isFinite(Number(out.budget[k])) || Number(out.budget[k]) < 0) throw Error("预算金额必须是非负数字"); b[k] = Number(out.budget[k]); } out.budget = b; }
         if (path === "/records") { out.expenses = Array.isArray(out.expenses) ? out.expenses : []; for (const ex of out.expenses) { if (!out.memberIds.includes(ex.payerMemberId)) throw Error("费用付款人必须是参与成员"); if (!Number.isFinite(Number(ex.amountCents)) || Number(ex.amountCents) < 0) throw Error("费用金额必须是非负数字"); } out.bodyData = (Array.isArray(out.bodyData) ? out.bodyData : []).filter(x => out.memberIds.includes(x.memberId)); }
-        if (path === "/users" && out.member) Object.assign(out, out.member);
-        if (path === "/users" && out.password === "") delete out.password;
+        if (path === "/users" && out.member) { Object.assign(out, out.member); delete out.member; }
+        if (path === "/users") { for (const k of ["passwordHash","tokenVersion","createdAt","updatedAt"]) delete out[k]; if (out.password === "") delete out.password; }
         return out;
       }
       function ImagePanel({ record }) {
@@ -673,17 +652,21 @@ export function renderHtml(nonce: string) {
         );
       }
       function AaPanel({ record }) {
-        const [d, setD] = useState(null), [msg, setMsg] = useState("");
-        useEffect(() => { api("/records/" + record.id + "/aa").then(setD).catch((x) => setMsg(x.message)); }, [record.id]);
+        const [d, setD] = useState(null), [msg, setMsg] = useState(""), [names, setNames] = useState({});
+        useEffect(() => { api("/records/" + record.id + "/aa").then(setD).catch((x) => setMsg(x.message)); api("/members").then(x => setNames(Object.fromEntries((x.items || x || []).map(m => [m.id, m.nickname || m.username || m.id])))).catch(() => setNames({})); }, [record.id]);
+        const displayMember = mid => names[mid] ? names[mid] + " (" + mid + ")" : mid;
         if (msg) return e("div", { className: "card" }, e("b", null, msg));
         if (!d) return e("div", { className: "card" }, "AA加载中...");
         return e("div", { className: "card" },
           e("h3", null, "AA - " + record.routeName),
-          e("p", null, "总额 " + money(d.totalCents) + "，基础人均 " + money(d.baseShareCents) + "，余数 " + money(d.remainderCents) + "，余数承担 " + d.remainderOwnerMemberId),
-          e("table", { className: "table" }, e("tbody", null, (d.byMember || []).map((x) => e("tr", { key: x.memberId }, e("td", null, x.memberId), e("td", null, "已付 " + money(x.paidCents)), e("td", null, "应摊 " + money(x.shareCents)), e("td", null, "应付 " + money(x.payableCents)), e("td", null, "应收 " + money(x.receivableCents))))))
+          e("p", null, "总额 " + money(d.totalCents) + "，基础人均 " + money(d.baseShareCents) + "，余数 " + money(d.remainderCents) + "，余数承担 " + displayMember(d.remainderOwnerMemberId)),
+          e("table", { className: "table" }, e("tbody", null, (d.byMember || []).map((x) => e("tr", { key: x.memberId }, e("td", null, displayMember(x.memberId)), e("td", null, "已付 " + money(x.paidCents)), e("td", null, "应摊 " + money(x.shareCents)), e("td", null, "应付 " + money(x.payableCents)), e("td", null, "应收 " + money(x.receivableCents))))))
         );
       }
-      function Crud({ title, list, load, page, refresh, path, f, setF, cols, after, fields }) {
+      function clone(x) { return JSON.parse(JSON.stringify(typeof x === "function" ? x() : x)); }
+      function resourceKey(path, obj) { return path === "/users" ? obj && obj.username : obj && obj.id; }
+      function draftKey(path, edit, obj) { const key = resourceKey(path, obj); return edit ? (key ? "draft:edit:" + path + ":" + key : null) : "draft:new:" + path; }
+      function Crud({ title, list, load, page, refresh, path, f, setF, initialState, cols, after, fields }) {
         const [edit, setEdit] = useState(null),
           [msg, setMsg] = useState(""), [busy, setBusy] = useState(false);
         const rows = Array.isArray(list) ? list : [];
@@ -697,7 +680,7 @@ export function renderHtml(nonce: string) {
         const set = (o) => {
           edit ? setEdit(o) : setF(o);
           try {
-            localStorage.setItem("draft:" + (edit ? "edit:" + path + ":" + edit.id : "new:" + path), JSON.stringify(o));
+            const dk = draftKey(path, edit, o); if (dk) localStorage.setItem(dk, JSON.stringify(o));
           } catch {}
         };
         return e(
@@ -734,7 +717,7 @@ export function renderHtml(nonce: string) {
               "otherNotes",
             ]).map((k) =>
               k in obj
-                ? e(Field, {
+                ? k === "role" ? e("select", { key: k, value: obj.role || "Member", onChange: ev => set({ ...obj, role: ev.target.value }) }, ["Owner", "Member"].map(r => e("option", { key: r, value: r }, r))) : e(Field, {
                     key: k,
                     o: obj,
                     set,
@@ -779,14 +762,14 @@ export function renderHtml(nonce: string) {
                   if (busy) return; setBusy(true);
                   try {
                     const payload = validateAndPrepare(path, obj);
-                    const key = path === "/users" ? obj.username : obj.id;
-                    await api(path + (edit && key ? "/" + key : ""), {
+                    const key = resourceKey(path, obj);
+                    await api(path + (edit && key ? "/" + encodeURIComponent(key) : ""), {
                       method: edit ? "PUT" : "POST",
                       body: JSON.stringify(payload),
                     });
                     setMsg("已保存");
-                    localStorage.removeItem("draft:" + (edit ? "edit:" + path + ":" + (path === "/users" ? obj.username : obj.id) : "new:" + path));
-                    setEdit(null); setF(JSON.parse(JSON.stringify(f)));
+                    const dk = draftKey(path, edit, obj); if (dk) localStorage.removeItem(dk);
+                    setEdit(null); if (!edit) setF(clone(initialState));
                     load();
                   } catch (x) {
                     setMsg(x.message);
@@ -816,7 +799,7 @@ export function renderHtml(nonce: string) {
                       null,
                       path !== "/members" && e(
                         "button",
-                        { className: "btn", onClick: () => setEdit({ ...o, ...(o.member || {}) }) },
+                        { className: "btn", onClick: () => o.member === null ? setMsg("绑定成员缺失/数据损坏，请先修复后端数据") : setEdit({ ...o, ...(o.member || {}) }) },
                         "编辑",
                       ),
                       path !== "/users" && path !== "/members" && e(

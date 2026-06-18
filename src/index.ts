@@ -245,10 +245,16 @@ async function initOwner(req: Request, env: Env) {
     createdAt: t,
     updatedAt: t,
   };
-  await putJson(env.CLIMB_KV, `members:${m.id}`, m);
-  await putJson(env.CLIMB_KV, `users:${u.username}`, u);
-  await del(env.CLIMB_KV, 'init-owner-lock');
-  return ok({ username: u.username, role: u.role, memberId });
+  try {
+    await putJson(env.CLIMB_KV, `members:${m.id}`, m);
+    await putJson(env.CLIMB_KV, `users:${u.username}`, u);
+    await del(env.CLIMB_KV, 'init-owner-lock');
+    return ok({ username: u.username, role: u.role, memberId });
+  } catch (e) {
+    await del(env.CLIMB_KV, `members:${m.id}`).catch(() => undefined);
+    await del(env.CLIMB_KV, 'init-owner-lock').catch(() => undefined);
+    throw e;
+  }
 }
 
 async function userView(env: Env, u: User) {
