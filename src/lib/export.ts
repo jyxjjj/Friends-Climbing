@@ -1,0 +1,5 @@
+export function csv(rows:any[]){if(!rows.length)return '';const cols=Object.keys(rows[0]);return [cols.join(','),...rows.map(r=>cols.map(c=>`"${String(r[c]??'').replace(/"/g,'""')}"`).join(','))].join('\n')}
+export function jsonc(data:any){return `// Friends Climbing export\n${JSON.stringify(data,null,2)}`}
+export function jsonl(rows:any[]){return rows.map(r=>JSON.stringify(r)).join('\n')}
+export function sql(rows:any[],table='climb_records'){const create=`CREATE TABLE IF NOT EXISTS ${table} (id VARCHAR(128) PRIMARY KEY, data JSON NOT NULL, created_at TIMESTAMP NULL);`;const ins=rows.map(r=>`INSERT INTO ${table} (id,data,created_at) VALUES ('${esc(r.id)}', CAST('${esc(JSON.stringify(r))}' AS JSON), '${esc(r.createdAt||new Date().toISOString())}');`).join('\n');return create+'\n'+ins}function esc(s:string){return s.replace(/'/g,"''")}
+export function xlsxHtml(rows:any[]){return `<table>${rows.map(r=>`<tr>${Object.values(r).map(v=>`<td>${String(v??'')}</td>`).join('')}</tr>`).join('')}</table>`}
