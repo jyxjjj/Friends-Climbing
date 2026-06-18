@@ -1,5 +1,5 @@
 import type { Env, User, Member, ClimbPlan, ClimbRecord, RecordImage } from './types';
-import { html } from './lib/html';
+import { csp, html } from './lib/html';
 import { hashPassword, verifyPassword, randomId } from './lib/crypto';
 import { getJson, putJson, listJson, del } from './lib/kv';
 import { currentUser, createSession, cookie, clearCookie, sid } from './lib/session';
@@ -59,12 +59,17 @@ async function handle(req: Request, env: Env) {
     return new Response(html, {
       headers: {
         'content-type': 'text/html;charset=utf-8',
+        'Content-Security-Policy': csp,
         'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'same-origin',
       },
     });
-  if (p === '/api/init-owner' && req.method === 'POST') return initOwner(req, env);
+  if (p === '/api/init-owner' && req.method === 'POST') {
+    assertSameOrigin(req, { allowMissingOrigin: true });
+    return initOwner(req, env);
+  }
   if (p === '/api/login' && req.method === 'POST') {
+    assertSameOrigin(req, { allowMissingOrigin: true });
     const b = asRecord(await json(req));
     const u = validUser(String(b.username))
       ? await getJson<User>(env.CLIMB_KV, `users:${b.username}`)

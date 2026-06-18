@@ -1,6 +1,6 @@
 # Friends Climbing
 
-一个可直接部署到 Cloudflare Workers 的团队爬山记录与活动管理系统。前端为 React（CDN UMD）单页应用；后端为 TypeScript Worker，使用 Cloudflare KV 保存结构化数据与 Session，使用 R2 保存图片文件。
+一个可直接部署到 Cloudflare Workers 的团队爬山记录与活动管理系统。项目按 **单域名、单团队部署模型** 设计：前端与 API 部署在同一 Worker origin 下，不支持跨域 API 调用。前端为 React（固定版本 CDN UMD + SRI）单页应用；后端为 TypeScript Worker，使用 Cloudflare KV 保存结构化数据与 Session，使用 R2 保存图片文件。
 
 ## 功能
 
@@ -77,11 +77,11 @@ curl -X POST https://你的域名/api/init-owner \
 - 图片上传/删除：仅 Owner 或对应记录创建者可执行。
 - 文件访问：必须登录；图片文件通过记录图片接口读取，不提供公开 R2 URL。
 
-后端通过统一权限函数 `canRead(...)`、`canCreate(...)`、`canUpdate(...)`、`canDelete(...)` 执行授权判断。
+后端通过统一权限函数 `canRead(...)`、`canCreate(...)`、`canUpdate(...)`、`canDelete(...)` 执行授权判断。已登录用户读取团队内全部成员、模板、计划、记录、图片元数据、图片文件和导出数据是单团队模型下的设计行为；用户主动通过 DevTools / curl 调用自己有权限的接口不是漏洞，安全边界在服务端认证、授权和同源写保护。
 
 ## API 文档
 
-所有 `/api/*` 接口除 `/api/init-owner` 与 `/api/login` 外都需要登录 Cookie。所有登录后的 `POST`、`PUT`、`DELETE` 会执行 Same-Origin CSRF 校验。
+所有 `/api/*` 接口除 `/api/init-owner` 与 `/api/login` 外都需要登录 Cookie；未登录用户不能访问成员、模板、计划、记录、Dashboard、导出、图片元数据或图片文件。所有登录后的 `POST`、`PUT`、`DELETE`、`PATCH` 都要求请求带有 `Origin`，且 `Origin` 必须严格等于当前请求 origin（`${url.protocol}//${url.host}`），否则返回 `403`。`/api/init-owner` 与 `/api/login` 为兼容 CLI/curl 可缺失 `Origin`，但如果提供了跨域 `Origin` 也会被拒绝。本项目不添加 `Access-Control-Allow-Origin`，不支持跨域 preflight 或跨域 API 写入；未授权或跨域调用即使能被浏览器/客户端发起，也会被登录权限模型与严格同源 `Origin` 校验阻断。
 
 ### Auth
 
@@ -123,6 +123,12 @@ Cookie 使用 `HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000`。
 - 单条：`/api/export/record/{recordId}?format=json|csv|xlsx|jsonc|jsonl|mysql|mariadb`
 
 CSV/XLSX 导出会转义 HTML 与表格公式前缀，缓解 CSV Injection。
+
+## 前端供应链与安全响应头
+
+HTML 响应包含 `Content-Security-Policy`、`X-Content-Type-Options: nosniff` 与 `Referrer-Policy: same-origin`。CSP 限制 `default-src 'self'`、`connect-src 'self'`、`object-src 'none'`、`base-uri 'self'`、`frame-ancestors 'none'`，并仅允许固定版本 cdnjs 脚本、Google Fonts 样式/字体以及同源、data/blob 图片。React、ReactDOM 与 Chart.js 使用固定版本 URL、`integrity` 和 `crossorigin="anonymous"`。
+
+当前 SPA 仍包含内联脚本和内联 CSS，因此 CSP 暂时保留 `script-src 'unsafe-inline'` 与样式内联许可。后续建议将前端 JS/CSS 拆为静态资源并使用 nonce/hash 去掉 `unsafe-inline`。
 
 ## PBKDF2 实现说明
 

@@ -87,11 +87,14 @@ export function safeFileName(name: string) {
     .trim();
   return base || 'file';
 }
-export function assertSameOrigin(req: Request) {
+export function assertSameOrigin(req: Request, options: { allowMissingOrigin?: boolean } = {}) {
   const m = req.method.toUpperCase();
   if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(m)) return;
   const origin = req.headers.get('Origin');
-  if (!origin) return;
+  if (!origin) {
+    if (options.allowMissingOrigin) return;
+    throw new Error('CSRF origin check failed');
+  }
   const u = new URL(req.url);
   if (origin !== `${u.protocol}//${u.host}`) throw new Error('CSRF origin check failed');
 }
