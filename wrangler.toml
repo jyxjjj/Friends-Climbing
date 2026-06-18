@@ -1,0 +1,13 @@
+name = "friends-climbing"
+main = "src/index.ts"
+compatibility_date = "2026-06-18"
+
+[[kv_namespaces]]
+binding = "CLIMB_KV"
+id = "replace-with-kv-namespace-id"
+preview_id = "replace-with-preview-kv-namespace-id"
+
+[[r2_buckets]]
+binding = "CLIMB_IMAGES"
+bucket_name = "friends-climbing-images"
+preview_bucket_name = "friends-climbing-images-dev"

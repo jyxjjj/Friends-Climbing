@@ -1,0 +1,48 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: friends-climbing-cloudflare-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Ensure Cloudflare KV and R2 resources
+        run: node scripts/cloudflare-resources.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_WORKER_NAME: ${{ vars.CLOUDFLARE_WORKER_NAME || 'friends-climbing' }}
+          CLOUDFLARE_KV_NAMESPACE: ${{ vars.CLOUDFLARE_KV_NAMESPACE || 'friends-climbing-kv' }}
+          CLOUDFLARE_PREVIEW_KV_NAMESPACE: ${{ vars.CLOUDFLARE_PREVIEW_KV_NAMESPACE || 'friends-climbing-kv-preview' }}
+          CLOUDFLARE_R2_BUCKET: ${{ vars.CLOUDFLARE_R2_BUCKET || 'friends-climbing-images' }}
+          CLOUDFLARE_PREVIEW_R2_BUCKET: ${{ vars.CLOUDFLARE_PREVIEW_R2_BUCKET || 'friends-climbing-images-dev' }}
+
+      - name: Deploy Worker
+        run: npx wrangler deploy --config wrangler.generated.toml
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
