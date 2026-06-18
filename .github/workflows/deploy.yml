@@ -20,6 +20,9 @@ jobs:
       PREVIEW_KV_NAMESPACE_TITLE: ${{ secrets.PREVIEW_KV_NAMESPACE_TITLE }}
       R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
       PREVIEW_R2_BUCKET_NAME: ${{ secrets.PREVIEW_R2_BUCKET_NAME }}
+      JWT_ED25519_PRIVATE_JWK: ${{ secrets.JWT_ED25519_PRIVATE_JWK }}
+      JWT_ED25519_PUBLIC_JWK: ${{ secrets.JWT_ED25519_PUBLIC_JWK }}
+      JWT_KEY_ID: ${{ secrets.JWT_KEY_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6

@@ -7,6 +7,8 @@ const kvTitle = must('KV_NAMESPACE_TITLE');
 const previewKvTitle = must('PREVIEW_KV_NAMESPACE_TITLE');
 const r2Bucket = must('R2_BUCKET_NAME');
 const previewR2Bucket = must('PREVIEW_R2_BUCKET_NAME');
+const jwtSecretNames = ['JWT_ED25519_PRIVATE_JWK', 'JWT_ED25519_PUBLIC_JWK', 'JWT_KEY_ID'];
+for (const name of jwtSecretNames) mustGithubSecret(name);
 const headers = {
   Authorization: `Bearer ${must('CLOUDFLARE_API_TOKEN')}`,
   'Content-Type': 'application/json',
@@ -14,6 +16,15 @@ const headers = {
 function must(name) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  return value;
+}
+function mustGithubSecret(name) {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `Missing GitHub Actions secret: ${name}. Configure it in GitHub repository settings > Secrets and variables > Actions. Secret values are never printed.`,
+    );
+  }
   return value;
 }
 async function cf(path, options = {}) {
@@ -54,25 +65,31 @@ function ensureR2Bucket(name) {
   return name;
 }
 async function ensureJwtSecrets() {
-  const worker = await cf(`/accounts/${accountId}/workers/scripts/${workerName}/secrets`).catch(
-    () => [],
+  const scriptExists = await cf(`/accounts/${accountId}/workers/scripts/${workerName}`).then(
+    () => true,
+    () => false,
   );
-  const names = new Set(Array.isArray(worker) ? worker.map((s) => s.name) : []);
-  const missing = ['JWT_ED25519_PRIVATE_JWK', 'JWT_ED25519_PUBLIC_JWK', 'JWT_KEY_ID'].filter(
-    (name) => !names.has(name),
-  );
-  if (missing.length) {
-    throw new Error(
-      `Missing Worker secrets: ${missing.join(', ')}. Configure them before deploy, e.g. ` +
-        '`npx wrangler secret put JWT_ED25519_PRIVATE_JWK`, ' +
-        '`npx wrangler secret put JWT_ED25519_PUBLIC_JWK`, and `npx wrangler secret put JWT_KEY_ID`.',
+  if (!scriptExists) {
+    console.log(
+      'Worker script does not exist yet; deploying a bootstrap worker before syncing secrets.',
     );
+    wrangler(['deploy']);
   }
+  for (const name of jwtSecretNames) {
+    const value = mustGithubSecret(name);
+    execFileSync('npx', ['wrangler', 'secret', 'put', name], {
+      input: value,
+      stdio: ['pipe', 'inherit', 'inherit'],
+      encoding: 'utf8',
+    });
+  }
+  console.log(
+    'JWT Worker secrets synchronized from GitHub Actions secrets. Secret values were not printed.',
+  );
 }
 const [kvId, previewKvId] = await Promise.all([ensureKv(kvTitle), ensureKv(previewKvTitle)]);
 ensureR2Bucket(r2Bucket);
 ensureR2Bucket(previewR2Bucket);
-await ensureJwtSecrets();
 const config = TOML.parse(readFileSync('wrangler.toml', 'utf8'));
 config.name = workerName;
 config.kv_namespaces = [{ binding: 'CLIMB_KV', id: kvId, preview_id: previewKvId }];
@@ -92,4 +109,5 @@ if (
 )
   throw new Error('wrangler.toml validation failed after structured update');
 writeFileSync('wrangler.toml', output);
+await ensureJwtSecrets();
 wrangler(['deploy']);

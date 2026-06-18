@@ -7,7 +7,7 @@ import type {
   RecordImage,
   RouteTemplate,
 } from './types';
-import { csp, html } from './lib/html';
+import { csp, renderHtml } from './lib/html';
 import { hashPassword, verifyPassword, randomId } from './lib/crypto';
 import { getJson, putJson, listJson, del } from './lib/kv';
 import {
@@ -63,19 +63,30 @@ export default {
 function id() {
   return randomId(12);
 }
+
+function randomNonce() {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
 const now = () => new Date().toISOString();
 async function handle(req: Request, env: Env) {
   const url = new URL(req.url),
     p = url.pathname;
-  if (!p.startsWith('/api'))
-    return new Response(html, {
+  if (!p.startsWith('/api')) {
+    const nonce = randomNonce();
+    return new Response(renderHtml(nonce), {
       headers: {
         'content-type': 'text/html;charset=utf-8',
-        'Content-Security-Policy': csp,
+        'Content-Security-Policy': csp(nonce),
         'X-Content-Type-Options': 'nosniff',
         'Referrer-Policy': 'same-origin',
       },
     });
+  }
   if (p === '/api/init-owner') {
     if (req.method !== 'POST') return methodNotAllowed(['POST']);
     assertSameOrigin(req, { allowMissingOrigin: true });
@@ -239,6 +250,30 @@ async function initOwner(req: Request, env: Env) {
   await del(env.CLIMB_KV, 'init-owner-lock');
   return ok({ username: u.username, role: u.role, memberId });
 }
+
+async function userView(env: Env, u: User) {
+  const { passwordHash, ...safe } = u as any;
+  const member = await getJson<Member>(env.CLIMB_KV, `members:${u.memberId}`);
+  return { ...safe, member: member || null };
+}
+async function userViews(env: Env, users: User[]) {
+  return Promise.all(users.map((x) => userView(env, x)));
+}
+async function assertNotLastOwnerDisabledOrDemoted(
+  env: Env,
+  old: User | null,
+  nextRole: string,
+  nextDisabled: boolean,
+) {
+  if (!old || old.role !== 'Owner') return;
+  if (nextRole === 'Owner' && !nextDisabled) return;
+  const users = await listJson<User>(env.CLIMB_KV, 'users:');
+  const activeOwners = users.filter(
+    (x) => x.username !== old.username && x.role === 'Owner' && !x.disabled,
+  ).length;
+  if (activeOwners < 1) throw appError(409, 'last_owner_protected', '不能禁用或降级最后一个 Owner');
+}
+
 async function crud(req: Request, env: Env, u: User, type: string, item?: string, url?: URL) {
   const prefixes: any = {
       users: 'users',
@@ -248,16 +283,18 @@ async function crud(req: Request, env: Env, u: User, type: string, item?: string
       records: 'records',
     },
     prefix = prefixes[type] + ':';
-  if (req.method === 'GET' && !item)
-    return ok(
-      paginate(
-        (await listJson<any>(env.CLIMB_KV, prefix)).filter((x) => canRead(u, type as any, x)),
-        url!,
-      ),
+  if (req.method === 'GET' && !item) {
+    const readable = (await listJson<any>(env.CLIMB_KV, prefix)).filter((x) =>
+      canRead(u, type as any, x),
     );
+    const shaped = type === 'users' ? await userViews(env, readable) : readable;
+    return ok(paginate(shaped, url!));
+  }
   if (req.method === 'GET' && item) {
-    const o = await getJson(env.CLIMB_KV, prefix + item);
-    return o ? (canRead(u, type as any, o) ? ok(o) : err('无权限', 403)) : err('不存在', 404);
+    const o = await getJson<any>(env.CLIMB_KV, prefix + item);
+    if (!o) return err('不存在', 404);
+    if (!canRead(u, type as any, o)) return err('无权限', 403);
+    return ok(type === 'users' ? await userView(env, o) : o);
   }
   if (req.method === 'DELETE' && item) {
     const old = await getJson<any>(env.CLIMB_KV, prefix + item);
@@ -291,7 +328,7 @@ async function crud(req: Request, env: Env, u: User, type: string, item?: string
         await del(env.CLIMB_KV, memberKey);
         throw e;
       }
-      return ok(o);
+      return ok(await userView(env, o));
     }
     const o = await sanitize(env, type, b, null, u);
     o.id ||= id();
@@ -306,33 +343,43 @@ async function crud(req: Request, env: Env, u: User, type: string, item?: string
   const o = await sanitize(env, type, b, old, u);
   if (type !== 'users') o.id = item;
   if (type === 'users' && o.__member) {
-    await putJson(env.CLIMB_KV, `members:${o.memberId}`, o.__member);
-    delete o.__member;
+    const oldMember = await getJson<Member>(env.CLIMB_KV, `members:${o.memberId}`);
+    try {
+      await putJson(env.CLIMB_KV, `members:${o.memberId}`, o.__member);
+      delete o.__member;
+      await putJson(env.CLIMB_KV, prefix + item, o);
+    } catch (e) {
+      if (oldMember) await putJson(env.CLIMB_KV, `members:${o.memberId}`, oldMember);
+      throw e;
+    }
+  } else {
+    await putJson(env.CLIMB_KV, prefix + item, o);
   }
-  await putJson(env.CLIMB_KV, prefix + item, o);
   if (
     type === 'users' &&
     (o.disabled !== old.disabled || o.role !== old.role || o.passwordHash !== old.passwordHash)
   )
     await revokeUserSessions(env, o.username);
-  return ok(o);
+  return ok(type === 'users' ? await userView(env, o) : o);
 }
-function paginate<T extends { updatedAt?: string; createdAt?: string; id?: string }>(
-  a: T[],
-  url: URL,
-) {
+function paginate<
+  T extends { updatedAt?: string; createdAt?: string; id?: string; username?: string },
+>(a: T[], url: URL) {
   const size = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize') || 50))),
     cursor = url.searchParams.get('cursor') || '';
   const sorted = a.sort((x, y) =>
-    `${y.updatedAt || y.createdAt || ''}${y.id}`.localeCompare(
-      `${x.updatedAt || x.createdAt || ''}${x.id}`,
+    `${y.updatedAt || y.createdAt || ''}${y.id || y.username}`.localeCompare(
+      `${x.updatedAt || x.createdAt || ''}${x.id || x.username}`,
     ),
   );
-  const start = cursor ? sorted.findIndex((x) => x.id === cursor) + 1 : 0;
+  const start = cursor ? sorted.findIndex((x) => (x.id || x.username) === cursor) + 1 : 0;
   const items = sorted.slice(start, start + size);
   return {
     items,
-    nextCursor: items.length === size ? items[items.length - 1]?.id : null,
+    nextCursor:
+      items.length === size
+        ? items[items.length - 1]?.id || items[items.length - 1]?.username
+        : null,
     hasMore: start + size < sorted.length,
   };
 }
@@ -345,7 +392,11 @@ async function sanitize(env: Env, type: string, b: any, old: any, u: User): Prom
     if (!validUser(username)) throw appError(422, 'invalid_username', '用户名不符合规则');
     let memberId = old?.memberId || id();
     const role = oneOf(b.role || 'Member', ['Owner', 'Member'] as const);
-    const passwordHash = b.password ? await hashPassword(String(b.password)) : old?.passwordHash;
+    await assertNotLastOwnerDisabledOrDemoted(env, old, role, Boolean(b.disabled));
+    const passwordHash =
+      typeof b.password === 'string' && b.password.length
+        ? await hashPassword(String(b.password))
+        : old?.passwordHash;
     if (!passwordHash || (b.password && !validPass(String(b.password))))
       throw appError(422, 'invalid_password', '密码不符合规则');
     const user: User = {
@@ -355,9 +406,15 @@ async function sanitize(env: Env, type: string, b: any, old: any, u: User): Prom
       memberId,
       tokenVersion:
         (old?.tokenVersion || 1) +
-        (old && (b.password || b.role !== old.role || b.disabled !== old.disabled) ? 1 : 0),
+        (old &&
+        ((typeof b.password === 'string' && b.password.length) ||
+          b.role !== old.role ||
+          b.disabled !== old.disabled)
+          ? 1
+          : 0),
       disabled: Boolean(b.disabled),
-      passwordChangedAt: b.password ? t : old?.passwordChangedAt,
+      passwordChangedAt:
+        typeof b.password === 'string' && b.password.length ? t : old?.passwordChangedAt,
       ...common,
     };
     const oldMember = old ? await getJson<Member>(env.CLIMB_KV, `members:${memberId}`) : null;
