@@ -108,3 +108,33 @@ records/{recordId}/{imageId}-{originalFileName}
 - 单条：`/api/export/record/{recordId}?format=json|csv|xlsx|jsonc|jsonl|mysql|mariadb`
 
 SQL 导出包含建表语句和 INSERT 语句，兼容 MySQL 8+ 与 MariaDB 11+ 的 JSON 字段用法。
+
+## GitHub Actions 一键部署（无需进入 Cloudflare 后台）
+
+仓库已内置 `.github/workflows/deploy.yml`。你只需要在 GitHub 仓库的 **Settings → Secrets and variables → Actions → Repository secrets** 配置下方全部密钥；之后推送到 `main` 或手动运行 `Deploy to Cloudflare Workers` workflow，即可自动创建 KV/R2 资源并部署 Worker，不需要再去 Cloudflare 后台手动创建命名空间或桶。
+
+必填密钥（全部都要在 GitHub Secrets 中配置，缺少任意一个都会让 workflow 直接失败）：
+
+- `CLOUDFLARE_API_TOKEN`：Cloudflare API Token。需要具备 Workers Scripts 编辑、Account KV Storage 编辑、R2 Storage 编辑权限。
+- `CLOUDFLARE_ACCOUNT_ID`：Cloudflare Account ID。
+- `WORKER_NAME`：Worker 名称，例如 `friends-climbing`。
+- `KV_NAMESPACE_TITLE`：生产 KV 名称，例如 `CLIMB_KV`。
+- `PREVIEW_KV_NAMESPACE_TITLE`：预览 KV 名称，例如 `CLIMB_KV_preview`。
+- `R2_BUCKET_NAME`：生产 R2 桶名，例如 `friends-climbing-images`。
+- `PREVIEW_R2_BUCKET_NAME`：预览 R2 桶名，例如 `friends-climbing-images-dev`。
+
+Workflow 会执行以下操作：
+
+1. 安装依赖并运行 TypeScript 类型检查。
+2. 通过 Cloudflare API 检查 KV namespace 和 R2 bucket 是否存在；不存在则自动创建。
+3. 在 CI 临时写入真实 KV namespace ID 与 R2 bucket 名称到 `wrangler.toml`。
+4. 执行 `wrangler deploy` 发布到 Cloudflare Workers。
+
+供应链安全措施：
+
+- GitHub Actions 使用当前主版本的完整 commit SHA 固定，避免 tag 被篡改后自动执行未知代码。
+- CI 使用 `npm ci --ignore-scripts` 按 `package-lock.json` 安装依赖，并默认禁用依赖生命周期脚本。
+- CI 在部署前执行 `npm audit --audit-level=high`，发现 high/critical 级别漏洞会阻断部署。
+- `package.json` 使用精确版本号，并通过 `overrides` 强制修补存在安全公告的传递依赖版本。
+
+注意：`wrangler.toml` 中保留的 `replace-with-*` 占位符是给 GitHub Actions 自动替换用的；如果你使用 GitHub Actions 部署，不需要手动修改这些值。
