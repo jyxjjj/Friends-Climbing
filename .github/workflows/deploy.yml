@@ -1,8 +1,6 @@
 name: Deploy to Cloudflare Workers
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -40,6 +38,12 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Format check
+        run: npm run format:check
 
       - name: Ensure Cloudflare resources and deploy
         run: node scripts/ensure-cloudflare-resources.mjs

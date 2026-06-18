@@ -1,24 +1,21 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-
+import TOML from '@iarna/toml';
 const accountId = must('CLOUDFLARE_ACCOUNT_ID');
 const workerName = must('WORKER_NAME');
 const kvTitle = must('KV_NAMESPACE_TITLE');
 const previewKvTitle = must('PREVIEW_KV_NAMESPACE_TITLE');
 const r2Bucket = must('R2_BUCKET_NAME');
 const previewR2Bucket = must('PREVIEW_R2_BUCKET_NAME');
-
 const headers = {
   Authorization: `Bearer ${must('CLOUDFLARE_API_TOKEN')}`,
   'Content-Type': 'application/json',
 };
-
 function must(name) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
 }
-
 async function cf(path, options = {}) {
   const res = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
     ...options,
@@ -26,50 +23,67 @@ async function cf(path, options = {}) {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.success === false) {
-    const message = json.errors?.map((e) => `${e.code}: ${e.message}`).join('; ') || res.statusText;
-    throw new Error(`Cloudflare API ${options.method || 'GET'} ${path} failed: ${message}`);
+    const codes = json.errors?.map((e) => e.code).join(',') || res.status;
+    throw new Error(`Cloudflare API ${options.method || 'GET'} ${path} failed (codes: ${codes})`);
   }
   return json.result;
 }
-
 async function ensureKv(title) {
-  const result = await cf(`/accounts/${accountId}/storage/kv/namespaces?per_page=100`);
-  const namespaces = Array.isArray(result) ? result : result.result || [];
+  const namespaces = await cf(`/accounts/${accountId}/storage/kv/namespaces?per_page=100`);
   const existing = namespaces.find((ns) => ns.title === title);
   if (existing) return existing.id;
-  const created = await cf(`/accounts/${accountId}/storage/kv/namespaces`, {
-    method: 'POST',
-    body: JSON.stringify({ title }),
-  });
-  return created.id;
-}
-
-async function ensureR2Bucket(name) {
-  try {
-    await cf(`/accounts/${accountId}/r2/buckets/${encodeURIComponent(name)}`);
-  } catch (error) {
-    if (!String(error.message).includes('10006') && !String(error.message).includes('not found'))
-      throw error;
-    await cf(`/accounts/${accountId}/r2/buckets`, {
+  return (
+    await cf(`/accounts/${accountId}/storage/kv/namespaces`, {
       method: 'POST',
-      body: JSON.stringify({ name }),
-    });
+      body: JSON.stringify({ title }),
+    })
+  ).id;
+}
+function wrangler(args, opts = {}) {
+  return execFileSync('npx', ['wrangler', ...args], {
+    stdio: opts.capture ? 'pipe' : 'inherit',
+    encoding: opts.capture ? 'utf8' : undefined,
+  });
+}
+function ensureR2Bucket(name) {
+  try {
+    wrangler(['r2', 'bucket', 'info', name], { capture: true });
+  } catch {
+    wrangler(['r2', 'bucket', 'create', name]);
   }
   return name;
 }
-
+function ensureJwtSecrets() {
+  for (const name of ['JWT_ED25519_PRIVATE_JWK', 'JWT_ED25519_PUBLIC_JWK', 'JWT_KEY_ID']) {
+    try {
+      wrangler(['secret', 'list'], { capture: true }).includes(name) ||
+        console.log(
+          `JWT secret ${name} is not visible in wrangler secret list; ensure it is set or let deployment fail validation.`,
+        );
+    } catch {
+      console.log('Unable to list secrets; wrangler deploy will validate required JWT secrets.');
+      break;
+    }
+  }
+}
 const [kvId, previewKvId] = await Promise.all([ensureKv(kvTitle), ensureKv(previewKvTitle)]);
-await Promise.all([ensureR2Bucket(r2Bucket), ensureR2Bucket(previewR2Bucket)]);
-
-let toml = readFileSync('wrangler.toml', 'utf8');
-toml = toml
-  .replace(/^name = .*/m, `name = "${workerName}"`)
-  .replace(/id = "replace-with-kv-namespace-id"/, `id = "${kvId}"`)
-  .replace(/preview_id = "replace-with-preview-kv-namespace-id"/, `preview_id = "${previewKvId}"`)
-  .replace(/bucket_name = "friends-climbing-images"/, `bucket_name = "${r2Bucket}"`)
-  .replace(
-    /preview_bucket_name = "friends-climbing-images-dev"/,
-    `preview_bucket_name = "${previewR2Bucket}"`,
-  );
-writeFileSync('wrangler.toml', toml);
-execFileSync('npx', ['wrangler', 'deploy'], { stdio: 'inherit' });
+ensureR2Bucket(r2Bucket);
+ensureR2Bucket(previewR2Bucket);
+ensureJwtSecrets();
+const config = TOML.parse(readFileSync('wrangler.toml', 'utf8'));
+config.name = workerName;
+config.kv_namespaces = [{ binding: 'CLIMB_KV', id: kvId, preview_id: previewKvId }];
+config.r2_buckets = [
+  { binding: 'CLIMB_IMAGES', bucket_name: r2Bucket, preview_bucket_name: previewR2Bucket },
+];
+config.secrets = { required: ['JWT_ED25519_PRIVATE_JWK', 'JWT_ED25519_PUBLIC_JWK', 'JWT_KEY_ID'] };
+const output = TOML.stringify(config);
+const parsed = TOML.parse(output);
+if (
+  parsed.name !== workerName ||
+  parsed.kv_namespaces?.[0]?.id !== kvId ||
+  parsed.r2_buckets?.[0]?.bucket_name !== r2Bucket
+)
+  throw new Error('wrangler.toml validation failed after structured update');
+writeFileSync('wrangler.toml', output);
+wrangler(['deploy']);

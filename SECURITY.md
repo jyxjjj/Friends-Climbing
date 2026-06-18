@@ -11,12 +11,10 @@ Until the first stable release, only the latest commit on the default branch is 
 
 ## Reporting a Vulnerability
 
-Please report vulnerabilities privately by opening a private security advisory on GitHub or emailing the maintainers listed by the repository owner. Include reproduction steps, affected endpoints, impact, and suggested fixes if known.
+Please report vulnerabilities **only** through GitHub Private Vulnerability Reporting / GitHub Security Advisory for this repository. Do not email maintainers and do not open public issues with exploit details.
 
-## No Public 0day Disclosure
+Include reproduction steps, affected endpoints, impact, logs with secrets removed, and suggested fixes if known.
 
-Do not publish 0day details, exploit code, screenshots of private data, or active attack instructions before maintainers have had a reasonable opportunity to investigate and release a fix.
+## Coordinated Disclosure
 
-## Handling Process
-
-Maintainers should acknowledge reports within 7 days, assess severity, prepare a fix, and coordinate disclosure timing with the reporter. Critical authentication, authorization, data exposure, or remote code execution issues should be prioritized immediately.
+Do not publish 0day details, exploit code, screenshots of private data, or active attack instructions before maintainers have investigated and released a fix. Critical authentication, authorization, data exposure, or remote code execution issues should be prioritized immediately.

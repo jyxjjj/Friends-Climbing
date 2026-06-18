@@ -1,50 +1,76 @@
 # Friends Climbing
 
-一个可直接部署到 Cloudflare Workers 的团队爬山记录与活动管理系统。项目按 **单域名、单团队部署模型** 设计：前端与 API 部署在同一 Worker origin 下，不支持跨域 API 调用。前端为 React（固定版本 CDN UMD + SRI）单页应用；后端为 TypeScript Worker，使用 Cloudflare KV 保存结构化数据与 Session，使用 R2 保存图片文件。
+Friends Climbing 是一个 Cloudflare Workers + TypeScript + React UMD 单页应用，用于单团队爬山计划、记录、图片、AA 费用和导出管理。项目保持 `AGPL-3.0-or-later`。
+
+## 当前安全与数据模型
+
+- **单团队系统**：所有活动成员都必须拥有登录账号；`User.memberId` 与 `Member.username` 严格一对一绑定，不支持没有登录账号的活动成员。
+- **认证模型**：登录后签发 Ed25519 JWT（`alg=EdDSA`）Access + Refresh Cookie。Access Cookie 为 `__Host-access_token`，默认 15 分钟有效；Refresh Cookie 为 `__Host-refresh_token`，默认 30 天有效。Refresh session 仍保存在 KV 的 `refreshSessions:{jti}`，每次 refresh 都轮换 token。
+- **后端状态**：密码修改、角色修改、禁用用户会提升 `tokenVersion` 并撤销旧 refresh session；旧 access token 在敏感读取/写入时也会被用户当前 `tokenVersion` 校验拒绝。
+- **初始化 Owner**：`/api/init-owner` 仍仅在没有任何 `users:` 记录时可用。首次抢注窗口由部署者人工 review KV 实际数据接受；部署后应立即初始化并检查 KV。
+- **权限**：Owner 全权限；Member 可读取团队数据；Member 可创建计划/记录，但只能修改/删除自己创建的计划/记录。图片上传/删除仅 Owner 或对应记录创建者可执行。
+- **同源写保护**：所有登录后的 `POST`、`PUT`、`DELETE`、`PATCH` 必须携带严格匹配当前 origin 的 `Origin`。
+- **错误响应**：对用户返回稳定、可读、不泄露内部实现的错误字符串；详细异常只写 Cloudflare 日志。
 
 ## 功能
 
-- 登录、登出、30 天 Cookie Session、自动续期
-- Owner / Member 权限模型：Owner 全权限，Member 默认只读，计划/记录创建者可编辑自身数据
-- 成员管理、成员详情统计、路线模板、爬山计划 CRUD、从计划生成完成记录
-- 完成记录 CRUD、AA 费用核算（金额使用整数分）
-- R2 图片批量上传、删除、分类、备注、下载
-- Dashboard 团队汇总、月/年趋势、成员排行榜
-- 导出单条或全量记录：CSV、XLSX（Excel 可打开 HTML 表格）、JSON、JSONC、JSONL、MySQL / MariaDB SQL
+- Owner/User/Member 一对一管理、禁用、角色变更和密码重置。
+- 路线模板、计划、完成记录 CRUD；计划/记录支持成员、预算、费用、身体数据、体脂、装备和备注字段。
+- R2 图片批量上传、MIME + magic bytes 校验、分类、备注、下载清单和附件下载。
+- AA 费用使用整数分配：`floor(total / n)` 为基础份额，余数归 Owner 的 `memberId`，保证收支总额一致。
+- Dashboard 团队汇总、趋势、成员统计。
+- 导出全量或单条记录：CSV、真正 XLSX、JSON、JSONC、JSONL、MySQL / MariaDB SQL。未知格式返回 `400`，单条不存在返回 `404`。
+- 列表接口返回 `{ items, nextCursor, hasMore }`，按更新时间/创建时间稳定排序。当前实现仍依赖 Workers KV list 后排序，适合小团队规模；如团队数据显著增长，应迁移到带索引的存储。
 
 ## 安装与本地开发
 
 ```bash
-npm ci
+npm ci --ignore-scripts
 npm run dev
+npm run typecheck
+npm test
+npm audit --audit-level=high
+npm run format:check
 ```
 
-本地开发需要可用的 Cloudflare Workers / Wrangler 环境，并在 `wrangler.toml` 中配置 KV namespace 与 R2 bucket 绑定。
+本地开发需要可用 Wrangler、KV namespace、R2 bucket 与 JWT Ed25519 JWK secrets。
 
-## KV 创建命令
+## Cloudflare 资源
+
+KV：
 
 ```bash
 npx wrangler kv namespace create CLIMB_KV
 npx wrangler kv namespace create CLIMB_KV --preview
 ```
 
-将输出的 `id` 和 `preview_id` 填入 `wrangler.toml`。
-
-## R2 创建命令
+R2：
 
 ```bash
 npx wrangler r2 bucket create friends-climbing-images
 npx wrangler r2 bucket create friends-climbing-images-dev
+npx wrangler r2 bucket info friends-climbing-images
 ```
+
+JWT secrets 必须写入 Worker Secret，Worker 不会在运行时静默生成临时密钥：
+
+- `JWT_ED25519_PRIVATE_JWK`
+- `JWT_ED25519_PUBLIC_JWK`
+- `JWT_KEY_ID`
 
 ## 部署流程
 
-```bash
-npm run typecheck
-npm run deploy
-```
+GitHub Actions 仅支持 `workflow_dispatch` 手动触发，不再随 `main` push 自动部署。Workflow 会执行：
 
-也可以使用仓库内置 GitHub Actions workflow。需要在 GitHub Secrets 中配置：
+1. `npm ci --ignore-scripts`
+2. `npm audit --audit-level=high`
+3. `npm run typecheck`
+4. `npm test`
+5. `npm run format:check`
+6. 检查/创建 KV 与 R2，结构化更新并校验 `wrangler.toml`
+7. `wrangler deploy`
+
+需要配置 GitHub Secrets：
 
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
@@ -54,108 +80,42 @@ npm run deploy
 - `R2_BUCKET_NAME`
 - `PREVIEW_R2_BUCKET_NAME`
 
-Workflow 会安装依赖、运行 `npm audit --audit-level=high`、运行 TypeScript 类型检查、创建缺失的 KV/R2 资源，并部署 Worker。Secrets 不会写入仓库；`wrangler.toml` 中的占位符仅在 CI 临时替换。
-
-## 初始化管理员账号
-
-首次部署后调用初始化接口。账号必须匹配 `[A-Za-z0-9]{4,32}`；密码长度至少 12。
-
-```bash
-curl -X POST https://你的域名/api/init-owner \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"Owner001","password":"ChangeMe-At-Least-12"}'
-```
-
-该接口仅在没有任何 `users:` 记录时可用，并使用初始化锁降低并发创建风险。成功后请访问站点登录。
-
-## 权限模型说明
-
-- `Owner`：可读取、创建、编辑、删除任意成员、模板、计划、记录与图片。
-- `Member`：可读取数据；不可创建成员、路线模板、计划或记录。
-- 计划创建者：可编辑/删除自己的计划。
-- 记录创建者：可编辑/删除自己的记录。
-- 图片上传/删除：仅 Owner 或对应记录创建者可执行。
-- 文件访问：必须登录；图片文件通过记录图片接口读取，不提供公开 R2 URL。
-
-后端通过统一权限函数 `canRead(...)`、`canCreate(...)`、`canUpdate(...)`、`canDelete(...)` 执行授权判断。已登录用户读取团队内全部成员、模板、计划、记录、图片元数据、图片文件和导出数据是单团队模型下的设计行为；用户主动通过 DevTools / curl 调用自己有权限的接口不是漏洞，安全边界在服务端认证、授权和同源写保护。
-
-## API 文档
-
-所有 `/api/*` 接口除 `/api/init-owner` 与 `/api/login` 外都需要登录 Cookie；未登录用户不能访问成员、模板、计划、记录、Dashboard、导出、图片元数据或图片文件。所有登录后的 `POST`、`PUT`、`DELETE`、`PATCH` 都要求请求带有 `Origin`，且 `Origin` 必须严格等于当前请求 origin（`${url.protocol}//${url.host}`），否则返回 `403`。`/api/init-owner` 与 `/api/login` 为兼容 CLI/curl 可缺失 `Origin`，但如果提供了跨域 `Origin` 也会被拒绝。本项目不添加 `Access-Control-Allow-Origin`，不支持跨域 preflight 或跨域 API 写入；未授权或跨域调用即使能被浏览器/客户端发起，也会被登录权限模型与严格同源 `Origin` 校验阻断。
+## API 摘要
 
 ### Auth
 
-- `POST /api/init-owner`：初始化 Owner。Body: `{ username, password }`。
-- `POST /api/login`：登录并设置 `sid` Cookie。
-- `POST /api/logout`：删除服务端 Session 并清除 Cookie。
+- `POST /api/init-owner`：初始化 Owner，同时创建 Owner User 与 Owner Member。
+- `POST /api/login`：登录，失败统一返回 `账号或密码错误`，并执行 dummy PBKDF2 与 IP/用户名限流。
+- `POST /api/refresh`：轮换 refresh token。
+- `POST /api/logout`：撤销当前 refresh session 并清除 cookies。
 - `GET /api/me`：当前用户。
 
-Cookie 使用 `HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000`。
+所有认证 API 响应带 `Cache-Control: private, no-store` 与 `Vary: Cookie`。
 
 ### CRUD
 
-- `GET /api/members|templates|plans|records?page=1&pageSize=50`
-- `GET /api/members|templates|plans|records/{id}`
-- `POST /api/members|templates|plans|records`
-- `PUT /api/members|templates|plans|records/{id}`
-- `DELETE /api/members|templates|plans|records/{id}`
+- `GET /api/users|members|templates|plans|records?pageSize=50&cursor=...`
+- `GET /api/users|members|templates|plans|records/{id}`
+- `POST /api/users|templates|plans|records`
+- `PUT /api/users|templates|plans|records/{id}`（必须提交当前 `version`）
+- `DELETE /api/templates|plans|records/{id}?version=...`
 
-运行时会丢弃未在 schema 中声明的字段，防止 mass assignment 与 prototype pollution。
-
-### Records
-
-- `POST /api/records/from-plan/{planId}`：由计划生成记录。
-- `GET /api/records/{recordId}/aa`：计算 AA 费用。
+成员必须通过用户管理创建/修改；成员/用户存在历史引用时默认禁用而非硬删除。
 
 ### Images
 
-- `GET /api/records/{recordId}/images`：列出图片元数据。
-- `POST /api/records/{recordId}/images`：上传 multipart/form-data，字段 `files`，可选 `category`、`note`。
-- `DELETE /api/records/{recordId}/images/{imageId}`：删除图片。
-- `GET /api/records/{recordId}/images/download`：获取下载清单。
-- `GET /api/records/{recordId}/images/{imageId}/file`：下载文件。
+- `GET /api/records/{recordId}/images`
+- `POST /api/records/{recordId}/images`
+- `DELETE /api/records/{recordId}/images/{imageId}`
+- `GET /api/records/{recordId}/images/download`
+- `GET /api/records/{recordId}/images/{imageId}/file`
 
-图片限制：单文件最大 10 MiB；只接受 `image/jpeg`、`image/png`、`image/webp`、`image/gif`；服务端会规范化文件名、忽略用户提供路径、强制 R2 key 使用服务端生成 ID 和扩展名。
+限制：单文件 10 MiB，最多 10 个文件，总大小 50 MiB。允许 JPEG/PNG/WebP/GIF，并验证 magic bytes。用户文件名只用于下载展示，不进入 R2 key。
 
-## 数据导出
+## 前端供应链与 CSP
 
-- 全量：`/api/export/all?format=json|csv|xlsx|jsonc|jsonl|mysql|mariadb`
-- 单条：`/api/export/record/{recordId}?format=json|csv|xlsx|jsonc|jsonl|mysql|mariadb`
+React、ReactDOM、Chart.js 继续使用固定版本 CDN UMD + SRI。SPA 内联脚本/样式仍存在，因此 CSP 使用固定 CDN 来源并保留必要的内联许可；后续可拆成 Worker 静态资源并改用 hash/nonce 进一步收紧。设置页提供源码仓库链接以满足 AGPL 网络服务源码可得性提示。
 
-CSV/XLSX 导出会转义 HTML 与表格公式前缀，缓解 CSV Injection。
+## License / AGPL Section 13
 
-## 前端供应链与安全响应头
-
-HTML 响应包含 `Content-Security-Policy`、`X-Content-Type-Options: nosniff` 与 `Referrer-Policy: same-origin`。CSP 限制 `default-src 'self'`、`connect-src 'self'`、`object-src 'none'`、`base-uri 'self'`、`frame-ancestors 'none'`，并仅允许固定版本 cdnjs 脚本、Google Fonts 样式/字体以及同源、data/blob 图片。React、ReactDOM 与 Chart.js 使用固定版本 URL、`integrity` 和 `crossorigin="anonymous"`。
-
-当前 SPA 仍包含内联脚本和内联 CSS，因此 CSP 暂时保留 `script-src 'unsafe-inline'` 与样式内联许可。后续建议将前端 JS/CSS 拆为静态资源并使用 nonce/hash 去掉 `unsafe-inline`。
-
-## PBKDF2 实现说明
-
-密码永不明文保存。每个用户创建独立 32 bytes 随机 salt，并用 WebCrypto API 执行 PBKDF2-SHA-256，524288 次迭代，派生 64 bytes key。登录失败统一返回 `账号或密码错误`。
-
-## KV 数据结构说明
-
-- `users:{username}`：用户、角色、PBKDF2 密码派生结果
-- `sessions:{sessionId}`：随机 256bit Session ID，KV TTL 30 天
-- `members:{memberId}`：成员资料
-- `routeTemplates:{routeId}`：路线模板
-- `plans:{planId}`：爬山计划
-- `records:{recordId}`：完成记录、费用、身体数据、备注
-- `images:{recordId}:{imageId}`：图片元数据
-
-## R2 图片存储说明
-
-图片二进制文件存储于 R2，key 格式为：
-
-```text
-records/{recordId}/{imageId}.{serverExtension}
-```
-
-## License
-
-Friends Climbing is licensed under the GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`). See `LICENSE`.
-
-## Source Code Availability (AGPL Section 13)
-
-If you modify this project and run it as a network service, AGPL Section 13 requires you to offer the Corresponding Source of your modified version to users who interact with it remotely through a computer network. Keep a prominent link to the source repository or another complete source distribution location in your deployed service.
+Friends Climbing is licensed under the GNU Affero General Public License v3.0 or later (`AGPL-3.0-or-later`). If you modify and run it as a network service, AGPL Section 13 requires offering Corresponding Source to remote users. Keep a prominent link to the source repository or complete source distribution in the deployed service.
